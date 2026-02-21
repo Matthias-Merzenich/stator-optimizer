@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import re
 import argparse
 import numpy as np
 import lifelib
@@ -29,6 +30,33 @@ def count_neighbours(origin_cells, neighbour_cells):
 
     return neighbour_counts
 
+def get_rule(rle):
+    rulestring = lifelib.load_rules("b3s23").lifetree().pattern(rle).getrule()
+
+    if rulestring.endswith("History"):
+        rulestring = rulestring[:-len("History")]
+        rle_is_history = True
+    else:
+        rle_is_history = False
+    
+    match = re.match(r"^b([2-8]*)s([0-8]*)$", rulestring)
+    if not match:
+        assert False, "Invalid rule: only Life-like rules without B0 or B1 are supported"
+    
+    birth_digits, survival_digits = match.groups()
+
+    if not survival_digits:
+        assert False, "Invalid rule: no survival conditions"
+
+    birth_at = [False] * 9
+    survival_at = [False] * 9
+    for digit in birth_digits:
+        birth_at[int(digit)] = True
+    for digit in survival_digits:
+        survival_at[int(digit)] = True
+    
+    return rulestring, birth_at, survival_at, rle_is_history
+
 parser = argparse.ArgumentParser()
 parser.add_argument(
     'input_file',
@@ -49,9 +77,17 @@ if os.path.isfile(args.input_file):
 else:
     assert False, "Search pattern file not found"
 
-sess = lifelib.load_rules("b3s23", "bs8", "b12345678s012345678")
+rulestring, birth_at, survival_at, rle_is_history = get_rule(rle)
+
+sess = lifelib.load_rules(rulestring, "bs8", "b12345678s012345678")
 lt = sess.lifetree(n_layers=1)
 lt4 = sess.lifetree(n_layers=4)
+
+# Convert 2-state rle to history
+if not rle_is_history:
+    initial_pattern = lt4.pattern("", rulestring + "History")
+    initial_pattern += lt.pattern(rle)
+    rle = initial_pattern.rle_string()
 
 # Convert all on cells to state 5 and all off cells to state 2.
 # In LifeHistory, State 5 cells will only remain state 5 as long as
@@ -66,7 +102,7 @@ initial_pattern = lt4.pattern(rle)
 _, _, width, height = initial_pattern.bounding_box
 
 # Remove state 2 cells
-mask = lt4.pattern("","LifeHistory")
+mask = lt4.pattern("", rulestring + "History")
 mask[0:width, 0:height] = 2
 initial_pattern -= mask
 
@@ -79,7 +115,7 @@ final_pattern = initial_pattern[ticks]
 envelope = final_pattern.layers()[1]
 initial_stator_on = final_pattern.layers()[2]
 intial_stator_population = initial_stator_on.population
-rotor = lt.pattern('','bs8')
+rotor = lt.pattern("", "bs8")
 rotor += envelope - initial_stator_on
 
 # Rotor cells that have a stator cell as a neighbour
@@ -87,11 +123,11 @@ adjacent_rotor = rotor - rotor[1]
 
 # Restrict the stator to the initial bounding  
 # box with an additional 1-cell-thick border.
-stator = lt.pattern('','b3s23')
+stator = lt.pattern("", rulestring)
 stator[-1:width+1, -1:height+1] = 1
 stator -= rotor
 
-rotor_phase_0 = lt.pattern('','b3s23')
+rotor_phase_0 = lt.pattern("", rulestring)
 rotor_phase_0 += initial_pattern.layers()[2]
 rotor_phases = [rotor_phase_0[t] & rotor for t in range(ticks + 1)]
 
@@ -100,10 +136,10 @@ rotor_phases = [rotor_phase_0[t] & rotor for t in range(ticks + 1)]
 # change_envelopes[0] assumes all adjacent rotor cells changed.
 change_envelopes = []
 for t in range(ticks):
-    changed_cells = lt.pattern('','b12345678s012345678')
+    changed_cells = lt.pattern("", "b12345678s012345678")
     changed_cells += rotor_phases[t] ^ rotor_phases[t+1]
     change_envelopes.append(changed_cells[1][-2:width+2, -2:height+2])
-changed_cells = lt.pattern('','b12345678s012345678')
+changed_cells = lt.pattern("", "b12345678s012345678")
 changed_cells += adjacent_rotor
 change_envelopes.insert(0, changed_cells[1][-2:width+2, -2:height+2])
 
@@ -156,9 +192,6 @@ for t in range(ticks):
                                   )).astype(np.int64).tolist()
     rotor_transitions.update(set(map(tuple, coords_and_counts)))
 
-# Life is the only supported rule at the moment.
-rule_is_life = True
-
 print("\nSetting up optimization search...")
 
 model = cp_model.CpModel()
@@ -182,14 +215,14 @@ for x,y,rotor_sum in stator_neighbour_counts:
                         if (u,v) != (0,0) and (x+u, y+v) in stator_cells
                     )
     neighbour_sum = rotor_sum + stator_sum
-    if rule_is_life:
+    if rulestring == "b3s23":
         model.AddLinearConstraint(neighbour_sum, 2, 3).OnlyEnforceIf(stator_bool[x,y])
         model.Add(neighbour_sum != 3).OnlyEnforceIf(stator_bool[x,y].Not())
     else:
         for count in range(9):
-            if B[count]:
+            if birth_at[count]:
                 model.Add(neighbour_sum != count).OnlyEnforceIf(stator_bool[x,y].Not())
-            if not S[count]:
+            if not survival_at[count]:
                 model.Add(neighbour_sum != count).OnlyEnforceIf(stator_bool[x,y])
 
 # Apply the CA rules to the rotor transitions
@@ -199,7 +232,7 @@ for x,y,rotor_sum,state_0,state_1 in rotor_transitions:
                         if (u,v) != (0,0) and (x+u, y+v) in stator_cells
                     )
     neighbour_sum = rotor_sum + stator_sum
-    if rule_is_life:
+    if rulestring == "b3s23":
         if state_0 == 0 and state_1 == 0:
             model.Add(neighbour_sum != 3)
         if state_0 == 0 and state_1 == 1:
@@ -211,13 +244,13 @@ for x,y,rotor_sum,state_0,state_1 in rotor_transitions:
             model.AddLinearConstraint(neighbour_sum, 2, 3)
     else:
         for count in range(9):
-            if state_0 == 0 and state_1 == 0 and B[count]:
+            if state_0 == 0 and state_1 == 0 and birth_at[count]:
                 model.Add(neighbour_sum != count)
-            if state_0 == 0 and state_1 == 1 and not B[count]:
+            if state_0 == 0 and state_1 == 1 and not birth_at[count]:
                 model.Add(neighbour_sum != count)
-            if state_0 == 1 and state_1 == 0 and S[count]:
+            if state_0 == 1 and state_1 == 0 and survival_at[count]:
                 model.Add(neighbour_sum != count)
-            if state_0 == 1 and state_1 == 1 and not S[count]:
+            if state_0 == 1 and state_1 == 1 and not survival_at[count]:
                 model.Add(neighbour_sum != count)
 
 # Use the input pattern as a hint to the solver
@@ -244,7 +277,7 @@ if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
     elif status == cp_model.FEASIBLE:
         print("\nNon-optimal solution found.")
 
-    output_pattern = lt.pattern('','b3s23')
+    output_pattern = lt.pattern("", rulestring)
     output_pattern += initial_pattern & rotor
 
     for x,y in stator_cells:
@@ -261,4 +294,4 @@ elif status == cp_model.UNKNOWN:
     print("\nUNKNOWN: no solutions were found, but the model was not proven infeasible.")
 elif status == cp_model.INFEASIBLE:
     print(status)
-    print("\nINFEASIBLE: no solutions possible.")
+    print("\nINFEASIBLE: no solution possible.")
