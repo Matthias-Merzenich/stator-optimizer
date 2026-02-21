@@ -57,19 +57,31 @@ def get_rule(rle):
     
     return rulestring, birth_at, survival_at, rle_is_history
 
+def clean_rle(rle):
+    return "\n".join([line for line in rle.splitlines() if not line.startswith('#')])
+
 parser = argparse.ArgumentParser()
 parser.add_argument(
     'input_file',
-    help="Input LifeHistory file in RLE format"
+    help="File containing the pattern to be optimized"
 )
 parser.add_argument(
     'ticks',
     type=int,
-    help="Number of ticks to advance the pattern"
+    help="Number of time steps to advance the pattern for analysis"
+)
+parser.add_argument(
+    '-a', '--adjust',
+    type=int,
+    nargs=4,
+    default=[0, 0, 0, 0],
+    metavar=("LEFT", "RIGHT", "TOP", "BOTTOM"),
+    help="Expand the search box by the given distances (negative values contract the search box)"
 )
 args = parser.parse_args()
 
 ticks = args.ticks
+adjust_left, adjust_right, adjust_top, adjust_bottom = args.adjust
 
 if os.path.isfile(args.input_file):
     with open(args.input_file, 'r') as file:
@@ -109,7 +121,8 @@ initial_pattern -= mask
 initial_population = initial_pattern.population
 print("\nAnalyzing pattern...")
 print(f'Initial population: {initial_population}')
-print(f'Bounding box: {width} x {height}')
+print(f'Initial bounding box: {width} x {height}')
+print(f'Search bounding box: {width + adjust_left + adjust_right} x {height + adjust_top + adjust_bottom}')
 
 final_pattern = initial_pattern[ticks]
 envelope = final_pattern.layers()[1]
@@ -121,10 +134,12 @@ rotor += envelope - initial_stator_on
 # Rotor cells that have a stator cell as a neighbour
 adjacent_rotor = rotor - rotor[1]
 
-# Restrict the stator to the initial bounding  
-# box with an additional 1-cell-thick border.
+# Restrict the stator to the search box
+# with an additional 1-cell-thick border.
 stator = lt.pattern("", rulestring)
-stator[-1:width+1, -1:height+1] = 1
+stator[     -1 - adjust_left : width+1 + adjust_right,
+            -1 - adjust_top : height+1 + adjust_bottom
+      ] = 1
 stator -= rotor
 
 rotor_phase_0 = lt.pattern("", rulestring)
@@ -138,15 +153,21 @@ change_envelopes = []
 for t in range(ticks):
     changed_cells = lt.pattern("", "b12345678s012345678")
     changed_cells += rotor_phases[t] ^ rotor_phases[t+1]
-    change_envelopes.append(changed_cells[1][-2:width+2, -2:height+2])
+    change_envelopes.append(changed_cells[1][   -2 - adjust_left : width+2 + adjust_right,
+                                                -2 - adjust_top : height+2 + adjust_bottom
+                                            ])
 changed_cells = lt.pattern("", "b12345678s012345678")
 changed_cells += adjacent_rotor
-change_envelopes.insert(0, changed_cells[1][-2:width+2, -2:height+2])
+change_envelopes.insert(0, changed_cells[1][    -2 - adjust_left : width+2 + adjust_right,
+                                                -2 - adjust_top : height+2 + adjust_bottom
+                                           ])
 
 # Coordinate lists of various groups of cells
-stator_cells = stator[-1:width+1, -1:height+1].coords().tolist()
+stator_cells = stator.coords().tolist()
 stator_cells = set(map(tuple, stator_cells))
-#adjacent_rotor_cells = adjacent_rotor[-1:width+1, -1:height+1].coords().tolist()
+#adjacent_rotor_cells = adjacent_rotor[  -1 - adjust_left : width+1 + adjust_right,
+#                                        -1 - adjust_top : height+1 + adjust_bottom
+#                                     ].coords().tolist()
 #adjacent_stator_cells = (stator & change_envelopes[0]).coords().tolist()
 non_adjacent_stator_cells = (stator - change_envelopes[0]).coords().tolist()
 
@@ -205,7 +226,12 @@ for x,y in stator_cells:
     model.Add(stator_int[x,y] == 0).OnlyEnforceIf(stator_bool[x,y].Not())
 
     # Boundary stator cells must be OFF
-    if x == -1 or x == width or y == -1 or y == height:
+    if (
+        x == -1 - adjust_left or
+        x == width + adjust_right or
+        y == -1 - adjust_top or
+        y == height + adjust_bottom
+    ):
         model.Add(stator_int[x,y] == 0)
 
 # Apply the CA rules to the stator cells
@@ -283,9 +309,22 @@ if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
     for x,y in stator_cells:
         if solver.Value(stator_int[x,y]) == 1:
             output_pattern[x,y] = 1
-    if output_pattern.population < initial_population:
+
+    # Only output the pattern if it has a smaller population than
+    # the original or if one of the search box bounds is strictly
+    # within the corresponding bound of the initial stator.
+    init_box = initial_stator_on.bounding_box
+    init_box[2] += init_box[0]
+    init_box[3] += init_box[1]
+    if (
+        output_pattern.population < initial_population or
+        0 - adjust_left > init_box[0] or
+        0 - adjust_top  > init_box[1] or
+        width + adjust_right < init_box[2] or
+        height + adjust_bottom < init_box[3]
+    ):
         print(f"\nFinal population: {output_pattern.population}")
-        print(output_pattern.rle_string())
+        print(clean_rle(output_pattern.rle_string()))
     elif status == cp_model.OPTIMAL:
         print("\nInput pattern is already optimal.")
     else:
@@ -293,5 +332,6 @@ if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
 elif status == cp_model.UNKNOWN:
     print("\nUNKNOWN: no solutions were found, but the model was not proven infeasible.")
 elif status == cp_model.INFEASIBLE:
-    print(status)
     print("\nINFEASIBLE: no solution possible.")
+
+print()
