@@ -59,26 +59,28 @@ rotor_neighbours_lt = contract_sess.lifetree(n_layers=1)
 lt = sess.lifetree(n_layers=1)
 lt4 = sess.lifetree(n_layers=4)
 
-# We need to get the bounding box before we strip the state 2 cells.
-initial_pattern = lt4.pattern(rle)
-x_0, y_0, width, height = initial_pattern.bounding_box
-
-# Convert all on cells to state 5 and all off cells to state 0.
+# Convert all on cells to state 5 and all off cells to state 2.
 # In LifeHistory, State 5 cells will only remain state 5 as long as
-# they never die, so they can be used to detect the initial stator
-# cells that are on.
-rle = rle.translate(str.maketrans({ 'A': 'E', 
-                                    'B': '.',
+# they never die, so they can be used to detect the initial stator.
+rle = rle.translate(str.maketrans({ 'A': 'E',
                                     'C': 'E',
-                                    'D': '.',
-                                    'F': '.'}))
+                                    'D': 'B',
+                                    'F': 'B'
+                                  }))
 
 initial_pattern = lt4.pattern(rle)
+_, _, width, height = initial_pattern.bounding_box
+
+# Remove state 2 cells
+mask = lt4.pattern("","LifeHistory")
+mask[0:width, 0:height] = 2
+initial_pattern -= mask
+
 initial_population = initial_pattern.population
 print(f'Initial population: {initial_population}')
 print(f'Bounding box: {width} x {height}\n')
-final_pattern = initial_pattern[ticks]
 
+final_pattern = initial_pattern[ticks]
 envelope = final_pattern.layers()[1]
 initial_stator_on = final_pattern.layers()[2]
 intial_stator_population = initial_stator_on.population
