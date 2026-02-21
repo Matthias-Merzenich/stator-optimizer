@@ -49,13 +49,7 @@ if os.path.isfile(args.input_file):
 else:
     assert False, "Search pattern file not found"
 
-print("Analyzing pattern...")
-
-sess = lifelib.load_rules("b3s23")
-expand_sess = lifelib.load_rules("b12345678s012345678")
-contract_sess = lifelib.load_rules("bs8")
-expand_lt = expand_sess.lifetree(n_layers=1)
-rotor_neighbours_lt = contract_sess.lifetree(n_layers=1)
+sess = lifelib.load_rules("b3s23", "bs8", "b12345678s012345678")
 lt = sess.lifetree(n_layers=1)
 lt4 = sess.lifetree(n_layers=4)
 
@@ -77,14 +71,15 @@ mask[0:width, 0:height] = 2
 initial_pattern -= mask
 
 initial_population = initial_pattern.population
+print("\nAnalyzing pattern...")
 print(f'Initial population: {initial_population}')
-print(f'Bounding box: {width} x {height}\n')
+print(f'Bounding box: {width} x {height}')
 
 final_pattern = initial_pattern[ticks]
 envelope = final_pattern.layers()[1]
 initial_stator_on = final_pattern.layers()[2]
 intial_stator_population = initial_stator_on.population
-rotor = rotor_neighbours_lt.pattern('','bs8')
+rotor = lt.pattern('','bs8')
 rotor += envelope - initial_stator_on
 
 # Rotor cells that have a stator cell as a neighbour
@@ -105,10 +100,10 @@ rotor_phases = [rotor_phase_0[t] & rotor for t in range(ticks + 1)]
 # change_envelopes[0] assumes all adjacent rotor cells changed.
 change_envelopes = []
 for t in range(ticks):
-    changed_cells = expand_lt.pattern('','b12345678s012345678')
+    changed_cells = lt.pattern('','b12345678s012345678')
     changed_cells += rotor_phases[t] ^ rotor_phases[t+1]
     change_envelopes.append(changed_cells[1][-2:width+2, -2:height+2])
-changed_cells = expand_lt.pattern('','b12345678s012345678')
+changed_cells = lt.pattern('','b12345678s012345678')
 changed_cells += adjacent_rotor
 change_envelopes.insert(0, changed_cells[1][-2:width+2, -2:height+2])
 
