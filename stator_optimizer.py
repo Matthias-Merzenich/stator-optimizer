@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
-import os
-import re
 import argparse
-import numpy as np
+import re
+import os
+
 import lifelib
+import numpy as np
 from ortools.sat.python import cp_model
 
 # Treat coordinate tuples as single objects
@@ -19,11 +20,11 @@ def count_neighbours(origin_cells, neighbour_cells):
                                     [ 1, -1], [ 1, 0], [ 1, 1]
                                  ])
 
-    # New array containing all possible neighbours of the 
+    # New array containing all possible neighbours of the
     # origin_cells arranged in groups of 8 by origin cell.
     all_neighbours = origin_cells[:, np.newaxis, :] + neighbour_offsets
     all_neighbours = all_neighbours.reshape(-1, 2)
-    
+
     # Identify which cells are in neighbour_cells and sum them.
     is_neighbour = np.isin(coordinate_view(all_neighbours), coordinate_view(neighbour_cells))
     neighbour_counts = is_neighbour.reshape(-1, 8).sum(axis=1)
@@ -35,15 +36,11 @@ def get_rule(rle):
 
     if rulestring.endswith("History"):
         rulestring = rulestring[:-len("History")]
-    
-    match = re.match(r"^b([2-8]*)s([0-8]*)$", rulestring)
-    if not match:
-        assert False, "Invalid rule: only Life-like rules without B0 or B1 are supported"
-    
-    birth_digits, survival_digits = match.groups()
 
-    if not survival_digits:
-        assert False, "Invalid rule: no survival conditions"
+    match = re.match(r"^b([2-8]*)s([0-8]*)$", rulestring)
+    assert match, "Invalid rule: only Life-like rules without B0 or B1 are supported"
+    birth_digits, survival_digits = match.groups()
+    assert survival_digits, "Invalid rule: no survival conditions"
 
     birth_at = [False] * 9
     survival_at = [False] * 9
@@ -51,21 +48,45 @@ def get_rule(rle):
         birth_at[int(digit)] = True
     for digit in survival_digits:
         survival_at[int(digit)] = True
-    
+
     return rulestring, birth_at, survival_at
 
 def clean_rle(rle):
     return "\n".join([line for line in rle.splitlines() if not line.startswith('#')])
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawTextHelpFormatter,
+    description="A program to optimize the stator of patterns in Life-like cellular automata.",
+    add_help=False
+)
 parser.add_argument(
     'input_file',
-    help="File containing the pattern to be optimized"
+    help=   "File containing the pattern to be optimized. When the\n"
+            "pattern is saved using a history rule, you can specify\n"
+            "stator cell states in the solution as follows:\n"
+            "------------------------------------------------\n"
+            " history state | input state | solution state   \n"
+            "---------------+-------------+------------------\n"
+            " 0 (black)     | off         | either on or off \n"
+            " 1 (green)     | on          | either on or off \n"
+            " 2 (blue)      | off         | off              \n"
+            " 3 (white)     | on          | off              \n"
+            " 4 (red)       | off         | on               \n"
+            " 5 (yellow)    | on          | on               \n"
+            "This only applies to stator cells. If a cell is\n"
+            "determined to be part of the rotor, then its state\n"
+            "will not be changed in the solution.\n\n"
 )
 parser.add_argument(
     'ticks',
     type=int,
-    help="Number of time steps to advance the pattern for analysis"
+    help="Number of time steps to run the pattern for analysis."
+)
+parser.add_argument(
+    '-h', '--help',
+    action='help',
+    default=argparse.SUPPRESS,
+    help='Show this help message and exit.'
 )
 parser.add_argument(
     '-a', '--adjust',
@@ -73,7 +94,8 @@ parser.add_argument(
     nargs=4,
     default=[0, 0, 0, 0],
     metavar=("LEFT", "RIGHT", "TOP", "BOTTOM"),
-    help="Expand the search box by the given distances (negative values contract the search box)"
+    help=   "Expand the search box by the given distances. Negative\n"
+            "values contract the search box."
 )
 args = parser.parse_args()
 
@@ -98,6 +120,34 @@ initial_pattern = lt4.pattern("", rulestring + "History")
 initial_pattern += lt4.pattern(rle)
 rle = initial_pattern.rle_string()
 
+# Identify cells to be forced on or off in the solution
+rle_forced_on = rle.translate(str.maketrans({   'A': 'B',
+                                                'C': 'B',
+                                                'D': 'E',
+                                                'F': 'B'
+                                            }))
+rle_forced_off = rle.translate(str.maketrans({  'A': 'B',
+                                                'B': 'E',
+                                                'C': 'E',
+                                                'D': 'B',
+                                                'E': 'B',
+                                                'F': 'B'
+                                             }))
+forced_on = lt4.pattern(rle_forced_on).layers()[2]
+forced_off = lt4.pattern(rle_forced_off).layers()[2]
+
+# I was getting segmentation faults when forced_on or
+# forced_off were empty, so I had to include these checks.
+# I don't know why this occurs.
+if forced_on.nonempty():
+    forced_on = lt.pattern("", rulestring) + forced_on
+else:
+    forced_on = lt.pattern("", rulestring)
+if forced_off.nonempty():
+    forced_off = lt.pattern("", rulestring) + forced_off
+else:
+    forced_off = lt.pattern("", rulestring)
+
 # Convert all on cells to state 5 and all off cells to state 2.
 # In LifeHistory, State 5 cells will only remain state 5 as long as
 # they never die, so they can be used to detect the initial stator.
@@ -108,6 +158,7 @@ rle = rle.translate(str.maketrans({ 'A': 'E',
                                   }))
 
 initial_pattern = lt4.pattern(rle)
+assert initial_pattern.nonempty(), "Input pattern is empty"
 _, _, width, height = initial_pattern.bounding_box
 
 # Remove state 2 cells
@@ -124,7 +175,6 @@ print(f'Search bounding box: {width + adjust_left + adjust_right} x {height + ad
 final_pattern = initial_pattern[ticks]
 envelope = final_pattern.layers()[1]
 initial_stator_on = final_pattern.layers()[2]
-intial_stator_population = initial_stator_on.population
 rotor = lt.pattern("", "bs8")
 rotor += envelope - initial_stator_on
 
@@ -135,6 +185,8 @@ stator[     0 - adjust_left : width + adjust_right,
             0 - adjust_top : height + adjust_bottom
       ] = 1
 stator -= rotor
+forced_on &= stator
+forced_off &= stator
 boundary_stator = stator[1] - stator - rotor
 stator += boundary_stator
 
@@ -147,7 +199,7 @@ initial_pattern_2_state = lt.pattern("", rulestring)
 initial_pattern_2_state += initial_pattern.layers()[2]
 rotor_phases = [adjacent_rotor[1] & rotor & initial_pattern_2_state[t] for t in range(ticks + 1)]
 
-# For each generation calculate the envelope covering all cells 
+# For each generation calculate the envelope covering all cells
 # that changed in the last tick or that border a changed cell.
 # change_envelopes[0] assumes all adjacent rotor cells changed.
 change_envelopes = [adjacent_rotor[1]]
@@ -158,8 +210,10 @@ for t in range(ticks):
 # Coordinate lists of various groups of cells
 stator_cells = stator.coords().tolist()
 stator_cells = set(map(tuple, stator_cells))
-boundary_stator_cells = boundary_stator.coords().tolist()
-boundary_stator_cells = set(map(tuple, boundary_stator_cells))
+forced_on_cells = forced_on.coords().tolist()
+forced_on_cells = set(map(tuple, forced_on_cells))
+forced_off_cells = (forced_off + boundary_stator).coords().tolist()
+forced_off_cells = set(map(tuple, forced_off_cells))
 non_adjacent_stator_cells = (stator - adjacent_rotor[1]).coords().tolist()
 
 # Set of tuples (x,y,c) where (x,y) is a stator cell and c is a count of
@@ -216,9 +270,10 @@ for x,y in stator_cells:
     model.Add(stator_int[x,y] == 1).OnlyEnforceIf(stator_bool[x,y])
     model.Add(stator_int[x,y] == 0).OnlyEnforceIf(stator_bool[x,y].Not())
 
-    # Boundary stator cells must be OFF
-    if (x,y) in boundary_stator_cells:
+    if (x,y) in forced_off_cells:
         model.Add(stator_int[x,y] == 0)
+    elif (x,y) in forced_on_cells:
+        model.Add(stator_int[x,y] == 1)
 
 # Apply the CA rules to the stator cells
 for x,y,rotor_sum in stator_neighbour_counts:
@@ -274,7 +329,6 @@ for x,y in intial_stator_off_cells:
     model.AddHint(stator_int[x,y], 1)
 
 size = sum(stator_int[x,y] for x,y in stator_cells)
-#model.Add(size <= intial_stator_population)
 model.Minimize(size)
 
 solver = cp_model.CpSolver()
@@ -289,19 +343,21 @@ if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
     elif status == cp_model.FEASIBLE:
         print("\nNon-optimal solution found.")
 
-    output_pattern = lt.pattern("", rulestring)
-    output_pattern += initial_pattern & rotor
-
+    output_pattern = initial_pattern_2_state & rotor
     for x,y in stator_cells:
         if solver.Value(stator_int[x,y]) == 1:
             output_pattern[x,y] = 1
 
-    # Only output the pattern if it has a smaller population
-    # than the original or if the original stator contains a
-    # cell outside the search area.
+    # Only print the pattern if:
+    # * it has a smaller population than the original, or
+    # * the original stator contains a cell outside the search area, or
+    # * there is a cell in the original stator that is forced off in the solution, or
+    # * there is a cell not in the original stator that is forced on in the solution.
     if (
         output_pattern.population < initial_population or
-        (initial_stator_on - (stator - boundary_stator)).nonempty()
+        (initial_stator_on - (stator - boundary_stator)).nonempty() or
+        (forced_off & initial_stator_on).nonempty() or
+        (forced_on - initial_stator_on).nonempty()
     ):
         print(f"\nFinal population: {output_pattern.population}")
         print(clean_rle(output_pattern.rle_string()))
