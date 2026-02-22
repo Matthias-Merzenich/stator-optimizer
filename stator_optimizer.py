@@ -35,9 +35,6 @@ def get_rule(rle):
 
     if rulestring.endswith("History"):
         rulestring = rulestring[:-len("History")]
-        rle_is_history = True
-    else:
-        rle_is_history = False
     
     match = re.match(r"^b([2-8]*)s([0-8]*)$", rulestring)
     if not match:
@@ -55,7 +52,7 @@ def get_rule(rle):
     for digit in survival_digits:
         survival_at[int(digit)] = True
     
-    return rulestring, birth_at, survival_at, rle_is_history
+    return rulestring, birth_at, survival_at
 
 def clean_rle(rle):
     return "\n".join([line for line in rle.splitlines() if not line.startswith('#')])
@@ -89,17 +86,17 @@ if os.path.isfile(args.input_file):
 else:
     assert False, "Search pattern file not found"
 
-rulestring, birth_at, survival_at, rle_is_history = get_rule(rle)
+rulestring, birth_at, survival_at = get_rule(rle)
 
 sess = lifelib.load_rules(rulestring, "bs8", "b12345678s012345678")
 lt = sess.lifetree(n_layers=1)
 lt4 = sess.lifetree(n_layers=4)
 
-# Convert 2-state rle to history
-if not rle_is_history:
-    initial_pattern = lt4.pattern("", rulestring + "History")
-    initial_pattern += lt.pattern(rle)
-    rle = initial_pattern.rle_string()
+# Convert the input file to a history RLE. It's faster to change the
+# cell states by modifying the RLE than to change them in the lifetree.
+initial_pattern = lt4.pattern("", rulestring + "History")
+initial_pattern += lt4.pattern(rle)
+rle = initial_pattern.rle_string()
 
 # Convert all on cells to state 5 and all off cells to state 2.
 # In LifeHistory, State 5 cells will only remain state 5 as long as

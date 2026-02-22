@@ -1,5 +1,5 @@
 # Stator Optimizer
-This is a simple Python script for reducing the stator (unchanging part) of patterns in Life-like cellular automata. This project was inspired by Jeremy Dover's [CGOL Stator Reducer](https://github.com/jeremydover/CGOL-Stator-Reducer). It features significantly improved speed and memory use, but currently has fewer options.
+This is a simple Python script for reducing the stator (unchanging part) of patterns in Life-like cellular automata. This project was inspired by Jeremy Dover's [CGOL Stator Reducer](https://github.com/jeremydover/CGOL-Stator-Reducer). It features significantly improved speed and memory use but currently has fewer options.
 
 This script requires the following Python packages:
 * numpy
@@ -9,7 +9,6 @@ This script requires the following Python packages:
 -Matthias Merzenich
 
 ------------------------------------------------------------------------------
-
 ```
 usage: stator_optimizer.py [-h] [-a LEFT RIGHT TOP BOTTOM] input_file ticks
 
