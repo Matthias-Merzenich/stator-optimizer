@@ -7,29 +7,7 @@ import os
 import lifelib
 import numpy as np
 from ortools.sat.python import cp_model
-
-# Treat coordinate tuples as single objects
-def coordinate_view(arr):
-        return np.ascontiguousarray(arr).view(np.dtype((np.void, arr.dtype.itemsize * arr.shape[1])))
-
-# For every cell in the numpy array origin_cells, count the number
-# of its neighbours that are in the numpy array neighbour_cells.
-def count_neighbours(origin_cells, neighbour_cells):
-    neighbour_offsets = np.array([  [-1, -1], [-1, 0], [-1, 1],
-                                    [ 0, -1],          [ 0, 1],
-                                    [ 1, -1], [ 1, 0], [ 1, 1]
-                                 ])
-
-    # New array containing all possible neighbours of the
-    # origin_cells arranged in groups of 8 by origin cell.
-    all_neighbours = origin_cells[:, np.newaxis, :] + neighbour_offsets
-    all_neighbours = all_neighbours.reshape(-1, 2)
-
-    # Identify which cells are in neighbour_cells and sum them.
-    is_neighbour = np.isin(coordinate_view(all_neighbours), coordinate_view(neighbour_cells))
-    neighbour_counts = is_neighbour.reshape(-1, 8).sum(axis=1)
-
-    return neighbour_counts
+from scipy.spatial import cKDTree
 
 def get_rule(rle):
     rulestring = lifelib.load_rules("b3s23").lifetree().pattern(rle).getrule()
@@ -197,15 +175,21 @@ adjacent_rotor = stator[1] & (rotor - rotor[1])
 
 initial_pattern_2_state = lt.pattern("", rulestring)
 initial_pattern_2_state += initial_pattern.layers()[2]
-rotor_phases = [adjacent_rotor[1] & rotor & initial_pattern_2_state[t] for t in range(ticks + 1)]
+rotor_mask = adjacent_rotor[1] & rotor
+pattern_phases = [initial_pattern_2_state]
+rotor_phases = [rotor_mask & initial_pattern_2_state]
+for t in range(1,ticks+1):
+    pattern_phases.append(pattern_phases[t-1][1])
+    rotor_phases.append(rotor_mask & pattern_phases[t])
 
 # For each generation calculate the envelope covering all cells
 # that changed in the last tick or that border a changed cell.
 # change_envelopes[0] assumes all adjacent rotor cells changed.
-change_envelopes = [adjacent_rotor[1]]
+rotor_mask = adjacent_rotor[1]
+change_envelopes = [rotor_mask]
 for t in range(ticks):
     changed_cells = rotor_phases[t] ^ rotor_phases[t+1]
-    change_envelopes.append(changed_cells[1] & adjacent_rotor[1])
+    change_envelopes.append(changed_cells[1] & rotor_mask)
 
 # Coordinate lists of various groups of cells
 stator_cells = stator.coords().tolist()
@@ -220,36 +204,35 @@ non_adjacent_stator_cells = (stator - adjacent_rotor[1]).coords().tolist()
 # its on rotor neighbours in some generation. A single stator cell will
 # correspond to multiple elements in this set.
 stator_neighbour_counts = set()
-for t in range(ticks):
-    gen_t_rotor_coords = rotor_phases[t].coords()
-    gen_t_stator_coords = (change_envelopes[t] & stator).coords()
-
-    gen_t_neighbour_counts = count_neighbours(gen_t_stator_coords, gen_t_rotor_coords)
-    gen_t_neighbour_counts = np.expand_dims(gen_t_neighbour_counts, axis=1)
-
-    coords_and_counts = np.hstack(( gen_t_stator_coords,
-                                    gen_t_neighbour_counts
-                                  )).astype(np.int64).tolist()
-    stator_neighbour_counts.update(set(map(tuple, coords_and_counts)))
-
-for x,y in non_adjacent_stator_cells:
-    stator_neighbour_counts.add((x,y,0))
 
 # Set of tuples (x, y, c, state_0, state_1) where (x,y) is a rotor cell, c is a
 # count of its on rotor neighbours in some generation, state_0 is the state of
 # the cell in that generation, and state_1 is the state in the next generation.
 rotor_transitions = set()
-for t in range(ticks):
-    gen_t_rotor_coords = rotor_phases[t].coords()
-    gen_t_adjacent_rotor_coords = (change_envelopes[t] & adjacent_rotor).coords()
 
+# Populate stator_neighbour_counts and rotor_transitions
+for t in range(ticks):
+    tree = cKDTree(rotor_phases[t].coords())
+
+    gen_t_stator_coords = (change_envelopes[t] & stator).coords()
+    gen_t_stator_neighbour_counts = tree.query_ball_point(gen_t_stator_coords, 1, p=np.inf, return_length=True)
+    gen_t_stator_neighbour_counts = np.expand_dims(gen_t_stator_neighbour_counts, axis=1)
+
+    coords_and_counts = np.hstack(( gen_t_stator_coords,
+                                    gen_t_stator_neighbour_counts
+                                  )).astype(np.int64).tolist()
+    stator_neighbour_counts.update(set(map(tuple, coords_and_counts)))
+
+    gen_t_adjacent_rotor_coords = (change_envelopes[t] & adjacent_rotor).coords()
     gen_t_rotor_state_0 = rotor_phases[t][gen_t_adjacent_rotor_coords]
     gen_t_rotor_state_1 = rotor_phases[t+1][gen_t_adjacent_rotor_coords]
-    gen_t_rotor_neighbour_counts = count_neighbours(gen_t_adjacent_rotor_coords, gen_t_rotor_coords)
-
+    gen_t_rotor_neighbour_counts = (
+        tree.query_ball_point(gen_t_adjacent_rotor_coords, 1, p=np.inf, return_length=True)
+        - tree.query_ball_point(gen_t_adjacent_rotor_coords, 0, p=np.inf, return_length=True)
+    )
+    gen_t_rotor_neighbour_counts = np.expand_dims(gen_t_rotor_neighbour_counts, axis=1)
     gen_t_rotor_state_0 = np.expand_dims(gen_t_rotor_state_0, axis=1)
     gen_t_rotor_state_1 = np.expand_dims(gen_t_rotor_state_1, axis=1)
-    gen_t_rotor_neighbour_counts = np.expand_dims(gen_t_rotor_neighbour_counts, axis=1)
 
     coords_and_counts = np.hstack(( gen_t_adjacent_rotor_coords,
                                     gen_t_rotor_neighbour_counts,
@@ -257,6 +240,9 @@ for t in range(ticks):
                                     gen_t_rotor_state_1
                                   )).astype(np.int64).tolist()
     rotor_transitions.update(set(map(tuple, coords_and_counts)))
+
+for x,y in non_adjacent_stator_cells:
+    stator_neighbour_counts.add((x,y,0))
 
 print("\nSetting up optimization search...")
 
