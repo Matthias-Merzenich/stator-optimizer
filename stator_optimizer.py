@@ -2,12 +2,12 @@
 
 import argparse
 import re
-import os
 
 import lifelib
 import numpy as np
 from ortools.sat.python import cp_model
 from scipy.spatial import cKDTree
+
 
 def get_rule(rle):
     rulestring = lifelib.load_rules("b3s23").lifetree().pattern(rle).getrule()
@@ -16,9 +16,16 @@ def get_rule(rle):
         rulestring = rulestring[:-len("History")]
 
     match = re.match(r"^b([2-8]*)s([0-8]*)$", rulestring)
-    assert match, "Invalid rule: only Life-like rules without B0 or B1 are supported"
+    if not match:
+        raise ValueError(f"Only Life-like rules without B0 or B1 are supported. Got: {rulestring}")
     birth_digits, survival_digits = match.groups()
-    assert survival_digits, "Invalid rule: no survival conditions"
+
+    if not survival_digits:
+        raise ValueError(f"Invalid rule: no survival conditions.")
+
+    def increasing(s): return all(s[i] < s[i+1] for i in range(len(s)-1))
+    if not increasing(birth_digits) or not increasing(survival_digits):
+        raise ValueError(f"Only Life-like rules are supported. Got: {rulestring}")
 
     birth_at = [False] * 9
     survival_at = [False] * 9
@@ -29,8 +36,10 @@ def get_rule(rle):
 
     return rulestring, birth_at, survival_at
 
+
 def clean_rle(rle):
     return "\n".join([line for line in rle.splitlines() if not line.startswith('#')])
+
 
 parser = argparse.ArgumentParser(
     formatter_class=argparse.RawTextHelpFormatter,
@@ -38,7 +47,7 @@ parser = argparse.ArgumentParser(
     add_help=False
 )
 parser.add_argument(
-    'input_file',
+    "input_file",
     help=   "File containing the pattern to be optimized. When the\n"
             "pattern is saved using a history rule, you can specify\n"
             "stator cell states in the solution as follows:\n"
@@ -56,18 +65,18 @@ parser.add_argument(
             "will not be changed in the solution.\n\n"
 )
 parser.add_argument(
-    'ticks',
+    "ticks",
     type=int,
     help="Number of time steps to run the pattern for analysis."
 )
 parser.add_argument(
-    '-h', '--help',
-    action='help',
+    "-h", "--help",
+    action="help",
     default=argparse.SUPPRESS,
-    help='Show this help message and exit.'
+    help="Show this help message and exit."
 )
 parser.add_argument(
-    '-a', '--adjust',
+    "-a", "--adjust",
     type=int,
     nargs=4,
     default=[0, 0, 0, 0],
@@ -80,11 +89,11 @@ args = parser.parse_args()
 ticks = args.ticks
 adjust_left, adjust_right, adjust_top, adjust_bottom = args.adjust
 
-if os.path.isfile(args.input_file):
+try:
     with open(args.input_file, 'r') as file:
         rle = file.read()
-else:
-    assert False, "Pattern file not found"
+except FileNotFoundError:
+    raise FileNotFoundError("Pattern file not found.")
 
 rulestring, birth_at, survival_at = get_rule(rle)
 
@@ -134,9 +143,9 @@ rle = rle.translate(str.maketrans({ 'A': 'E',
                                     'D': 'B',
                                     'F': 'B'
                                   }))
-
 initial_pattern = lt4.pattern(rle)
-assert initial_pattern.nonempty(), "Input pattern is empty"
+if initial_pattern.empty():
+    raise ValueError("Input pattern is empty.")
 _, _, width, height = initial_pattern.bounding_box
 
 # Remove state 2 cells
@@ -146,9 +155,9 @@ initial_pattern -= mask
 
 initial_population = initial_pattern.population
 print("\nAnalyzing pattern...")
-print(f'Initial population: {initial_population}')
-print(f'Initial bounding box: {width} x {height}')
-print(f'Search bounding box: {width + adjust_left + adjust_right} x {height + adjust_top + adjust_bottom}')
+print(f"Initial population: {initial_population}")
+print(f"Initial bounding box: {width} x {height}")
+print(f"Search bounding box: {width + adjust_left + adjust_right} x {height + adjust_top + adjust_bottom}")
 
 final_pattern = initial_pattern[ticks]
 envelope = final_pattern.layers()[1]
@@ -251,8 +260,8 @@ model = cp_model.CpModel()
 stator_int = {}
 stator_bool = {}
 for x,y in stator_cells:
-    stator_int[x,y] = model.NewIntVar(0,1,f'stator_int_{x}_{y}')
-    stator_bool[x,y] = model.NewBoolVar(f'stator_bool_{x}_{y}')
+    stator_int[x,y] = model.NewIntVar(0,1,f"stator_int_{x}_{y}")
+    stator_bool[x,y] = model.NewBoolVar(f"stator_bool_{x}_{y}")
     model.Add(stator_int[x,y] == 1).OnlyEnforceIf(stator_bool[x,y])
     model.Add(stator_int[x,y] == 0).OnlyEnforceIf(stator_bool[x,y].Not())
 
