@@ -2,6 +2,7 @@
 
 import argparse
 import re
+import sys
 
 import lifelib
 import numpy as np
@@ -48,21 +49,21 @@ parser = argparse.ArgumentParser(
 )
 parser.add_argument(
     "input_file",
-    help=   "File containing the pattern to be optimized. When the\n"
-            "pattern is saved using a history rule, you can specify\n"
-            "stator cell states in the solution as follows:\n"
-            "------------------------------------------------\n"
-            " history state | input state | solution state   \n"
-            "---------------+-------------+------------------\n"
-            " 0 (black)     | off         | either on or off \n"
-            " 1 (green)     | on          | either on or off \n"
-            " 2 (blue)      | off         | off              \n"
-            " 3 (white)     | on          | off              \n"
-            " 4 (red)       | off         | on               \n"
-            " 5 (yellow)    | on          | on               \n"
-            "This only applies to stator cells. If a cell is\n"
-            "determined to be part of the rotor, then its state\n"
-            "will not be changed in the solution.\n\n"
+    help="File containing the pattern to be optimized. When the\n"
+         "pattern is saved using a history rule, you can specify\n"
+         "stator cell states in the solution as follows:\n"
+         "------------------------------------------------\n"
+         " history state | input state | solution state   \n"
+         "---------------+-------------+------------------\n"
+         " 0 (black)     | off         | either on or off \n"
+         " 1 (green)     | on          | either on or off \n"
+         " 2 (blue)      | off         | off              \n"
+         " 3 (white)     | on          | off              \n"
+         " 4 (red)       | off         | on               \n"
+         " 5 (yellow)    | on          | on               \n"
+         "This only applies to stator cells. If a cell is\n"
+         "determined to be part of the rotor, then its state\n"
+         "will not be changed in the solution.\n\n"
 )
 parser.add_argument(
     "ticks",
@@ -81,11 +82,19 @@ parser.add_argument(
     nargs=4,
     default=[0, 0, 0, 0],
     metavar=("LEFT", "RIGHT", "TOP", "BOTTOM"),
-    help=   "Expand the search box by the given distances. Negative\n"
-            "values contract the search box."
+    help="Expand the search box by the given distances. Negative\n"
+         "values contract the search box."
+)
+parser.add_argument(
+    "--solution_only",
+    action="store_true",
+    help="Only print the solution to the optimization problem.\n"
+         "If there is no solution or the input pattern is\n"
+         "already optimal, print nothing."
 )
 args = parser.parse_args()
 
+verbose_print = print if not args.solution_only else lambda *a, **k: None
 ticks = args.ticks
 adjust_left, adjust_right, adjust_top, adjust_bottom = args.adjust
 
@@ -153,11 +162,17 @@ mask = lt4.pattern("", rulestring + "History")
 mask[0:width, 0:height] = 2
 initial_pattern -= mask
 
+# Put space between the "Instruction set ... detected" message and
+# our standard output. This way if the output is redirected to a
+# file it won't have a blank line at the top.
+verbose_print(file=sys.stderr)
+
 initial_population = initial_pattern.population
-print("\nAnalyzing pattern...")
-print(f"Initial population: {initial_population}")
-print(f"Initial bounding box: {width} x {height}")
-print(f"Search bounding box: {width + adjust_left + adjust_right} x {height + adjust_top + adjust_bottom}")
+verbose_print("Analyzing pattern...")
+verbose_print(f"Initial population: {initial_population}")
+verbose_print(f"Initial bounding box: {width} x {height}")
+verbose_print(f"Search bounding box: {width + adjust_left + adjust_right}"
+              f" x {height + adjust_top + adjust_bottom}\n")
 
 final_pattern = initial_pattern[ticks]
 envelope = final_pattern.layers()[1]
@@ -224,7 +239,9 @@ for t in range(ticks):
     tree = cKDTree(rotor_phases[t].coords())
 
     gen_t_stator_coords = (change_envelopes[t] & stator).coords()
-    gen_t_stator_neighbour_counts = tree.query_ball_point(gen_t_stator_coords, 1, p=np.inf, return_length=True)
+    gen_t_stator_neighbour_counts = (
+        tree.query_ball_point(gen_t_stator_coords, 1, p=np.inf, return_length=True)
+    )
     gen_t_stator_neighbour_counts = np.expand_dims(gen_t_stator_neighbour_counts, axis=1)
 
     coords_and_counts = np.hstack(( gen_t_stator_coords,
@@ -253,7 +270,7 @@ for t in range(ticks):
 for x,y in non_adjacent_stator_cells:
     stator_neighbour_counts.add((x,y,0))
 
-print("\nSetting up optimization search...")
+verbose_print("Setting up optimization search...")
 
 model = cp_model.CpModel()
 
@@ -328,15 +345,15 @@ model.Minimize(size)
 
 solver = cp_model.CpSolver()
 
-print("Beginning optimization search...")
+verbose_print("Beginning optimization search...\n")
 
 status = solver.Solve(model)
 
 if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
     if status == cp_model.OPTIMAL:
-        print("\nOptimal solution found.")
+        verbose_print("Optimal solution found.\n")
     elif status == cp_model.FEASIBLE:
-        print("\nNon-optimal solution found.")
+        verbose_print("Non-optimal solution found.\n")
 
     output_pattern = initial_pattern_2_state & rotor
     for x,y in stator_cells:
@@ -349,20 +366,20 @@ if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
     # * there is a cell in the original stator that is forced off in the solution, or
     # * there is a cell not in the original stator that is forced on in the solution.
     if (
-        output_pattern.population < initial_population or
-        (initial_stator_on - (stator - boundary_stator)).nonempty() or
-        (forced_off & initial_stator_on).nonempty() or
-        (forced_on - initial_stator_on).nonempty()
+        output_pattern.population < initial_population
+        or (initial_stator_on - (stator - boundary_stator)).nonempty()
+        or (forced_off & initial_stator_on).nonempty()
+        or (forced_on - initial_stator_on).nonempty()
     ):
-        print(f"\nFinal population: {output_pattern.population}")
+        verbose_print(f"Final population: {output_pattern.population}")
         print(clean_rle(output_pattern.rle_string()))
     elif status == cp_model.OPTIMAL:
-        print("\nInput pattern is already optimal.")
+        verbose_print("Input pattern is already optimal.")
     else:
-        print("\nNew pattern is not smaller than the input pattern.")
+        verbose_print("New pattern is not smaller than the input pattern.")
 elif status == cp_model.UNKNOWN:
-    print("\nUNKNOWN: no solutions were found, but the model was not proven infeasible.")
+    verbose_print("UNKNOWN: no solutions were found, but the model was not proven infeasible.")
 elif status == cp_model.INFEASIBLE:
-    print("\nINFEASIBLE: no solution possible.")
+    verbose_print("INFEASIBLE: no solution possible.")
 
-print()
+verbose_print()

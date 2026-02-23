@@ -11,7 +11,8 @@ This script requires the following Python packages:
 
 ------------------------------------------------------------------------------
 ```
-usage: stator_optimizer.py [-h] [-a LEFT RIGHT TOP BOTTOM] input_file ticks
+usage: stator_optimizer.py [-h] [-a LEFT RIGHT TOP BOTTOM] [--solution_only]
+                           input_file ticks
 
 A program to optimize the stator of patterns in Life-like cellular automata.
 
@@ -39,4 +40,7 @@ options:
   -a LEFT RIGHT TOP BOTTOM, --adjust LEFT RIGHT TOP BOTTOM
                         Expand the search box by the given distances. Negative
                         values contract the search box.
+  --solution_only       Only print the solution to the optimization problem.
+                        If there is no solution or the input pattern is
+                        already optimal, print nothing.
 ```
