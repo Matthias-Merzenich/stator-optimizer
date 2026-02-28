@@ -91,7 +91,7 @@ def parse_version(version_string):
     return tuple(map(int, (version_string.split('.') + ['0', '0'])[:3]))
 
 
-def validate_lifelib():
+def validate_lifelib(need_latest_lifelib=False):
     min_version = "2.5.9"
     repo_url = "https://gitlab.com/apgoucher/lifelib.git"
     clone_required = False
@@ -100,6 +100,7 @@ def validate_lifelib():
         if (
             parse_version(current_version) < parse_version(min_version)
             and not os.path.exists("lifelib")
+            and need_latest_lifelib
         ):
             print("Incompatible lifelib version: "
                   f"{current_version} < {min_version}", file=sys.stderr
@@ -169,9 +170,11 @@ def parse_rotor_descriptor(input_string):
 
 if __name__ == "__main__":
     if parse_rotor_descriptor(read_input_file(parse_arguments().input_file))[0] is not None:
-        validate_lifelib()
+        validate_lifelib(need_latest_lifelib=True)
+    else:
+        validate_lifelib(need_latest_lifelib=False)
 else:
-    validate_lifelib()
+    validate_lifelib(need_latest_lifelib=True)
 
 import lifelib
 
@@ -270,7 +273,13 @@ def get_rulestring_from_pattern(pattern):
 
 
 def get_rulestring(rle):
-    return get_rulestring_from_pattern(lifelib.load_rules("b3s23").lifetree().pattern(rle))
+    return get_rulestring_from_pattern(
+        lifelib.load_rules(
+            "b3s23",
+            "bs8",
+            "b12345678s012345678"
+        ).lifetree().pattern(rle)
+    )
 
 
 def get_rule(rulestring):
