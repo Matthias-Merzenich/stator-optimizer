@@ -1,10 +1,10 @@
 # Stator Optimizer
-stator_optimizer.py is a Python script for optimizing the stator (unchanging part) of patterns in Life-like cellular automata. It is intended to be a faster, more memory-efficient, and easier to use replacement for Jeremy Dover's [CGOL Stator Reducer](https://github.com/jeremydover/CGOL-Stator-Reducer).
+stator_optimizer.py is a program for optimizing the stator (unchanging part) of patterns in Life-like cellular automata. It is intended to be a faster, more memory-efficient, and easier to use replacement for Jeremy Dover's [CGOL Stator Reducer](https://github.com/jeremydover/CGOL-Stator-Reducer).
 
 -Matthias Merzenich
 
 ## Installation
-This script requires the following Python packages:
+This program requires the following Python packages:
 * `numpy`
 * `ortools`
 * `python-lifelib`
@@ -18,15 +18,15 @@ pip install -r requirements.txt
 
 The `lifelib` package requires a C++ compiler (gcc or clang). The initial run of stator_optimizer.py for a particular cellular automaton rule will take some time to compile code. Subsequent runs with the same rule will skip this step.
 
-`lifelib` version 2.5.9 or higher is required when the input pattern is in rotor descriptor format. Since the version available on PyPI may be older, the script automatically checks your installation. If it detects the rotor descriptor format and an incompatible `lifelib` version, it attempts to clone the [latest version](https://gitlab.com/apgoucher/lifelib) to the current working directory using `git`.
+`lifelib` version 2.5.9 or higher is required when the input pattern is in rotor descriptor format. Since the version available on PyPI may be older, the program automatically checks your installation. If it detects the rotor descriptor format and an incompatible `lifelib` version, it attempts to clone the [latest version](https://gitlab.com/apgoucher/lifelib) to the current working directory using `git`.
 
 ## Acknowledgements
-
-Thanks to Jeremy Dover for the original idea and implementation that inspired this script.
+Thanks to Jeremy Dover for the original idea and implementation that inspired this program.
 
 ## Usage
 ```
 usage: stator_optimizer.py [-h] [-a LEFT RIGHT TOP BOTTOM] [--solution_only]
+                           [-b {off,any}]
                            input_file ticks
 
 A program to optimize the stator of patterns in Life-like cellular automata.
@@ -61,4 +61,8 @@ options:
   --solution_only       Only print the solution to the optimization problem.
                         If there is no solution or if the input pattern is
                         already optimal, print nothing.
+  -b {off,any}, --boundary {off,any}
+                        The state of the cells at the boundary of the search
+                        area (default: 'off'). If 'any' is chosen, then the CA
+                        rules will not be applied at the boundary.
 ```

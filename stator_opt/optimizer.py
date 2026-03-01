@@ -6,6 +6,8 @@ def build_model(rulestring,
                 stator_int,
                 stator_bool,
                 stator_cells,
+                boundary_cells,
+                boundary_state,
                 forced_on_cells,
                 forced_off_cells,
                 stator_neighbor_counts,
@@ -26,6 +28,8 @@ def build_model(rulestring,
 
     # Apply the CA rules to the stator cells
     for x,y,rotor_sum in stator_neighbor_counts:
+        if (x,y) in boundary_cells and boundary_state == "any":
+            continue
         stator_sum = sum(   stator_int[x+u, y+v]
                             for u in [-1,0,1] for v in [-1,0,1]
                             if (u,v) != (0,0) and (x+u, y+v) in stator_cells

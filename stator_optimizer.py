@@ -70,7 +70,7 @@ def main():
 
     verbose_print(f"Initial population: {the_pattern.initial_population}")
     verbose_print(f"Initial bounding box:"
-                  f"{the_pattern.width} x {the_pattern.height}")
+                  f" {the_pattern.width} x {the_pattern.height}")
     verbose_print(f"Search bounding box:"
                   f" {the_pattern.width + adjust_left + adjust_right}"
                   f" x {the_pattern.height + adjust_top + adjust_bottom}\n")
@@ -81,14 +81,16 @@ def main():
 
     forced_on &= the_pattern.stator
     forced_off &= the_pattern.stator
+    if args.boundary == "off":
+        forced_off += the_pattern.stator_boundary
     forced_on_cells = forced_on.coords().tolist()
     forced_on_cells = set(map(tuple, forced_on_cells))
-    forced_off_cells = (    forced_off
-                            + the_pattern.stator_boundary
-                       ).coords().tolist()
+    forced_off_cells = forced_off.coords().tolist()
     forced_off_cells = set(map(tuple, forced_off_cells))
     stator_cells = the_pattern.stator.coords().tolist()
     stator_cells = set(map(tuple, stator_cells))
+    boundary_cells = the_pattern.stator_boundary.coords().tolist()
+    boundary_cells = set(map(tuple, boundary_cells))
 
     stator_neighbor_counts, rotor_transitions = get_transition_sets(the_pattern)
 
@@ -102,6 +104,8 @@ def main():
         stator_int,
         stator_bool,
         stator_cells,
+        boundary_cells,
+        args.boundary,
         forced_on_cells,
         forced_off_cells,
         stator_neighbor_counts,

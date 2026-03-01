@@ -57,6 +57,15 @@ def parse_arguments():
              "If there is no solution or if the input pattern is\n"
              "already optimal, print nothing."
     )
+    parser.add_argument(
+        "-b", "--boundary",
+        type=str.lower,
+        choices=["off", "any"],
+        default="off",
+        help="The state of the cells at the boundary of the search\n"
+             "area (default: 'off'). If 'any' is chosen, then the CA\n"
+             "rules will not be applied at the boundary."
+    )
     return parser.parse_args()
 
 

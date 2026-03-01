@@ -35,11 +35,11 @@ def get_pattern(rle, lt, lt5):
     rle = initial_pattern.rle_string()
 
     # Identify cells to be forced on or off in the solution
-    rle_forced_on = rle.translate(str.maketrans("ABCF" + "DE",
-                                                "BBBB" + "AA"
+    rle_forced_on = rle.translate(str.maketrans("ABC" + "DE" + "F",
+                                                "BBB" + "AA" + "."
                                                ))
-    rle_forced_off = rle.translate(str.maketrans("ADEF" + "BC",
-                                                 "BBBB" + "AA"
+    rle_forced_off = rle.translate(str.maketrans("ADE" + "BC" + "F",
+                                                 "BBB" + "AA" + "."
                                                 ))
     forced_on = lt.pattern("", rulestring) + lt5.pattern(rle_forced_on)
     forced_off = lt.pattern("", rulestring) + lt5.pattern(rle_forced_off)
@@ -47,8 +47,8 @@ def get_pattern(rle, lt, lt5):
     # Convert all on cells to state 5 and all off cells to state 2.
     # In LifeHistory, State 5 cells will only remain state 5 as long as
     # they never die, so they can be used to detect the initial stator.
-    rle = rle.translate(str.maketrans("BDF" + "ACE",
-                                      "BBB" + "EEE"
+    rle = rle.translate(str.maketrans("BD" + "ACE" + "F",
+                                      "BB" + "EEE" + "."
                                      ))
     initial_pattern = lt5.pattern(rle)
     if initial_pattern.empty():
