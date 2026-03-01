@@ -16,7 +16,7 @@ class PatternStats:
         self.rotor = lt.pattern("", "bs8")
         self.stator = lt.pattern("", "b12345678s012345678")
         self.initial_stator_on = lt.pattern("", "b12345678s012345678")
-        self.stator_boundary = None     # The boundary of the search area.
+        self.stator_boundary = lt.pattern("", "b12345678s012345678")
         self.adjacent_rotor = None      # Rotor cells with a stator neighbor.
         self.rotor_phases = None
         self.change_envelopes = None
@@ -28,23 +28,35 @@ class PatternStats:
         else:
             return float("inf")
 
-    def make_stator(self, adjustments):
+    # Restrict the stator to the search area
+    def make_stator(self, adjustments, distance):
         adjust_left, adjust_right, adjust_top, adjust_bottom = adjustments
 
-        # Restrict the stator to the search box
-        # with an additional 1-cell-thick border.
         self.stator[    0 - adjust_left : self.width + adjust_right,
                         0 - adjust_top : self.height + adjust_bottom
                    ] = 1
         self.stator -= self.rotor
-        self.stator_boundary = self.stator[1] - self.stator - self.rotor
+        self.stator_boundary += self.stator
+
+        if distance is not None and self.rotor.nonempty():
+            distance_mask = (
+                self.stator.owner.pattern("", "b1e2-cn3-c4-c5678s012345678")
+            )
+            distance_mask += self.rotor
+            self.stator &= distance_mask[distance]
+            if distance == 0:
+                self.stator_boundary = self.stator_boundary[1] & self.rotor
+            else:
+                self.stator_boundary &= distance_mask[distance]
+
+        self.stator_boundary = (self.stator_boundary[1]
+                                - self.stator_boundary
+                                - self.rotor)
         self.stator += self.stator_boundary
 
-        # Note that self.stator[1] comes first in the assignment, because
-        # we want self.adjacent_rotor to have rule B12345678/S012345678.
         self.adjacent_rotor = self.stator[1] & (self.rotor - self.rotor[1])
 
-    def analyze_pattern(self, ticks, adjustments):
+    def analyze_pattern(self, ticks, adjustments, distance):
         pattern_is_history = self.initial.getrule().endswith("History")
         if pattern_is_history:
             final_pattern = self.initial[ticks]
@@ -54,7 +66,7 @@ class PatternStats:
         else:
             self.rotor += flatten_multistate(self.initial)
 
-        self.make_stator(adjustments)
+        self.make_stator(adjustments, distance)
 
         previous_phase = self.initial
         rotor_mask = self.adjacent_rotor[1] & self.rotor

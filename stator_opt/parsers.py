@@ -2,6 +2,13 @@ import argparse
 import re
 
 
+def non_negative_int(value):
+    i = int(value)
+    if i < 0:
+        raise argparse.ArgumentTypeError(f"Value must be 0 or greater. Got: {value}")
+    return i
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawTextHelpFormatter,
@@ -32,7 +39,7 @@ def parse_arguments():
     )
     parser.add_argument(
         "ticks",
-        type=int,
+        type=non_negative_int,
         help="Number of time steps to run the pattern for analysis."
     )
     parser.add_argument(
@@ -51,11 +58,13 @@ def parse_arguments():
              "values contract the search box."
     )
     parser.add_argument(
-        "--solution_only",
-        action="store_true",
-        help="Only print the solution to the optimization problem.\n"
-             "If there is no solution or if the input pattern is\n"
-             "already optimal, print nothing."
+        "-d", "--distance",
+        type=non_negative_int,
+        default=None,
+        help="Force stator cells to be within this distance of the\n"
+             "rotor using the taxicab metric. For still life searches\n"
+             "the distance is applied to the forced cells, rather\n"
+             "than the rotor."
     )
     parser.add_argument(
         "-b", "--boundary",
@@ -65,6 +74,13 @@ def parse_arguments():
         help="The state of the cells at the boundary of the search\n"
              "area (default: 'off'). If 'any' is chosen, then the CA\n"
              "rules will not be applied at the boundary."
+    )
+    parser.add_argument(
+        "--solution_only",
+        action="store_true",
+        help="Only print the solution to the optimization problem.\n"
+             "If there is no solution or if the input pattern is\n"
+             "already optimal, print nothing."
     )
     return parser.parse_args()
 

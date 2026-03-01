@@ -21,6 +21,9 @@ def build_model(rulestring,
         model.Add(stator_int[x,y] == 1).OnlyEnforceIf(stator_bool[x,y])
         model.Add(stator_int[x,y] == 0).OnlyEnforceIf(stator_bool[x,y].Not())
 
+        # If a forced-on cell is in the forced-off boundary, we
+        # prioritize the forced-off setting, because the cell
+        # is outside of the search area.
         if (x,y) in forced_off_cells:
             model.Add(stator_int[x,y] == 0)
         elif (x,y) in forced_on_cells:

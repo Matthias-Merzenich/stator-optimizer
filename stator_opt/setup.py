@@ -16,6 +16,7 @@ def create_ruletable_session(rulestring, ruletable, lifelib):
             rulestring,
             "bs8",
             "b12345678s012345678",
+            "b1e2-cn3-c4-c5678s012345678",
             ruletable_path
         )
     finally:

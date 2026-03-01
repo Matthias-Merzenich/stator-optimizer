@@ -25,8 +25,8 @@ Thanks to Jeremy Dover for the original idea and implementation that inspired th
 
 ## Usage
 ```
-usage: stator_optimizer.py [-h] [-a LEFT RIGHT TOP BOTTOM] [--solution_only]
-                           [-b {off,any}]
+usage: stator_optimizer.py [-h] [-a LEFT RIGHT TOP BOTTOM] [-d DISTANCE]
+                           [-b {off,any}] [--solution_only]
                            input_file ticks
 
 A program to optimize the stator of patterns in Life-like cellular automata.
@@ -58,11 +58,16 @@ options:
   -a LEFT RIGHT TOP BOTTOM, --adjust LEFT RIGHT TOP BOTTOM
                         Expand the search box by the given distances. Negative
                         values contract the search box.
-  --solution_only       Only print the solution to the optimization problem.
-                        If there is no solution or if the input pattern is
-                        already optimal, print nothing.
+  -d DISTANCE, --distance DISTANCE
+                        Force stator cells to be within this distance of the
+                        rotor using the taxicab metric. For still life searches
+                        the distance is applied to the forced cells, rather
+                        than the rotor.
   -b {off,any}, --boundary {off,any}
                         The state of the cells at the boundary of the search
                         area (default: 'off'). If 'any' is chosen, then the CA
                         rules will not be applied at the boundary.
+  --solution_only       Only print the solution to the optimization problem.
+                        If there is no solution or if the input pattern is
+                        already optimal, print nothing.
 ```

@@ -60,7 +60,12 @@ def main():
         rulestring = get_rulestring(rle, lifelib.load_rules("life").lifetree())
         get_rule(rulestring)    # Validate the rule.
 
-        sess = lifelib.load_rules(rulestring, "bs8", "b12345678s012345678")
+        sess = lifelib.load_rules(
+            rulestring,
+            "bs8",
+            "b12345678s012345678",
+            "b1e2-cn3-c4-c5678s012345678"
+        )
         lt = sess.lifetree(n_layers=1)
         lt5 = sess.lifetree(n_layers=5)
 
@@ -77,12 +82,34 @@ def main():
 
     verbose_print("Analyzing pattern...")
 
-    the_pattern.analyze_pattern(args.ticks, args.adjust)
+    the_pattern.analyze_pattern(
+        args.ticks,
+        args.adjust,
+        args.distance
+    )
 
     forced_on &= the_pattern.stator
     forced_off &= the_pattern.stator
+
+    # For still life searches, the distance argument is
+    # applied to the forced cells, rather than the rotor.
+    if args.distance is not None and the_pattern.rotor.empty():
+        final_mask = the_pattern.stator - the_pattern.stator_boundary
+        the_pattern.stator = lt.pattern("", "b1e2-cn3-c4-c5678s012345678")
+        the_pattern.stator += forced_on + forced_off
+        the_pattern.stator = the_pattern.stator[args.distance]
+        the_pattern.stator &= final_mask
+
+        the_pattern.stator_boundary = lt.pattern("", "b12345678s012345678")
+        the_pattern.stator_boundary += the_pattern.stator
+        the_pattern.stator_boundary = (
+            the_pattern.stator_boundary[1] - the_pattern.stator
+        )
+        the_pattern.stator += the_pattern.stator_boundary
+
     if args.boundary == "off":
         forced_off += the_pattern.stator_boundary
+
     forced_on_cells = forced_on.coords().tolist()
     forced_on_cells = set(map(tuple, forced_on_cells))
     forced_off_cells = forced_off.coords().tolist()
