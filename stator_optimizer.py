@@ -4,7 +4,7 @@ from ortools.sat.python import cp_model
 
 from stator_opt.analysis import get_transition_sets
 from stator_opt.environment import validate_lifelib
-from stator_opt.optimizer import build_model
+from stator_opt.optimizer import apply_conditional_transform, build_model
 from stator_opt.parsers import (
     parse_arguments,
     parse_rotor_descriptor,
@@ -114,7 +114,8 @@ def main():
     forced_on_cells = set(map(tuple, forced_on_cells))
     forced_off_cells = forced_off.coords().tolist()
     forced_off_cells = set(map(tuple, forced_off_cells))
-    stator_cells = the_pattern.stator.coords().tolist()
+    stator_array = the_pattern.stator.coords()
+    stator_cells = stator_array.tolist()
     stator_cells = set(map(tuple, stator_cells))
     boundary_cells = the_pattern.stator_boundary.coords().tolist()
     boundary_cells = set(map(tuple, boundary_cells))
@@ -139,6 +140,53 @@ def main():
         rotor_transitions
     )
 
+    # Transformation sets that generate the given symmetry
+    FORCED_TRANSFORMATIONS = {
+        "C1": [],
+        "C2": ["rotate_180"],
+        "C4": ["rotate_90"],
+        "D2-": ["flip_y"],
+        "D2|": ["flip_x"],
+        "D2/": ["flip_diag"],
+        "D2\\": ["flip_reverse_diag"],
+        "D4+": ["flip_x", "flip_y"],
+        "D4X": ["flip_diag", "flip_reverse_diag"],
+        "D8": ["flip_x", "flip_diag"]
+    }
+
+    trans_bool = {}
+    symm_bool = {}
+
+    TRANSFORMATION_LIST = ["rotate_90", "rotate_180", "flip_x", "flip_y",
+                           "flip_diag", "flip_reverse_diag"]
+    for trans in TRANSFORMATION_LIST:
+        trans_bool[trans] = (model.NewBoolVar(f"trans_bool_{trans}"))
+
+    SYMMETRY_LIST = ["C2", "C4", "D2-", "D2|", "D2/",
+                     "D2\\", "D4+", "D4X", "D8"]
+    for symm in SYMMETRY_LIST:
+        symm_bool[symm] = model.NewBoolVar(f"symm_bool_{symm}")
+        for trans in FORCED_TRANSFORMATIONS[symm]:
+            model.AddImplication(symm_bool[symm], trans_bool[trans])
+
+    transformations = list(FORCED_TRANSFORMATIONS[args.symmetry])
+    if args.prefer_higher_symmetry:
+        transformations = TRANSFORMATION_LIST
+
+    for transformation in transformations:
+        apply_conditional_transform(
+            model,
+            transformation,
+            trans_bool,
+            stator_int,
+            stator_cells,
+            stator_array
+        )
+
+    # Cause transformations to be applied unconditionally
+    for trans in FORCED_TRANSFORMATIONS[args.symmetry]:
+        model.Add(trans_bool[trans] == 1)
+
     # Use the input pattern as a hint to the solver
     intial_stator_on_cells = set(map(tuple, (   the_pattern.stator
                                                 & the_pattern.initial_stator_on
@@ -151,8 +199,10 @@ def main():
     for x,y in intial_stator_off_cells:
         model.AddHint(stator_int[x,y], 1)
 
-    size = sum(stator_int[x,y] for x,y in stator_cells)
-    model.Minimize(size)
+    stator_population = sum(stator_int[x,y] for x,y in stator_cells)
+    symmetry_objective = sum(symm_bool[symm] for symm in SYMMETRY_LIST)
+
+    model.Minimize(20 * stator_population - symmetry_objective)
 
     solver = cp_model.CpSolver()
 

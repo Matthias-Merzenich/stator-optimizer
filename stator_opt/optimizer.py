@@ -1,4 +1,5 @@
 from .rules import get_rule
+from .symmetry import symmetrize, transform
 
 
 def build_model(rulestring,
@@ -83,3 +84,38 @@ def build_model(rulestring,
                     model.Add(neighbor_sum != count)
                 if state_0 == 1 and state_1 == 1 and not survival_at[count]:
                     model.Add(neighbor_sum != count)
+
+
+def apply_conditional_transform(
+    model,
+    transformation,
+    trans_bool,
+    stator_int,
+    stator_cells,
+    stator_array
+):
+    SYMM_FROM_TRANS = {
+        "flip_x": "D2|",
+        "flip_y": "D2-",
+        "flip_diag": "D2/",
+        "flip_reverse_diag": "D2\\",
+        "rotate_90": "C4",
+        "rotate_180": "C2"
+    }
+    symm_stator_array, center = symmetrize(
+        stator_array, SYMM_FROM_TRANS[transformation]
+    )
+    transformed_coords = transform( symm_stator_array,
+                                    transformation,
+                                    center
+                                  ).tolist()
+    for cell_1, cell_2 in zip(symm_stator_array.tolist(), transformed_coords):
+        model.Add(
+            stator_int[tuple(cell_1)] == stator_int[tuple(cell_2)]
+        ).OnlyEnforceIf(trans_bool[transformation])
+
+    symm_stator_cells = set(map(tuple, symm_stator_array.tolist()))
+    for cell in stator_cells - symm_stator_cells:
+        model.Add(
+            stator_int[cell] == 0
+        ).OnlyEnforceIf(trans_bool[transformation])

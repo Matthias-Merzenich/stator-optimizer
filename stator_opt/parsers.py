@@ -58,6 +58,22 @@ def parse_arguments():
              "values contract the search box."
     )
     parser.add_argument(
+        "-s", "--symmetry",
+        type=str.upper,
+        choices=["C1", "C2", "C4", "D2-", "D2|",
+                 "D2/", "D2\\", "D4+", "D4x", "D8"],
+        default="C1",
+        metavar="SYMMETRY",
+        help='Force the stator to have the given symmetry type.\n'
+             'Available types are:\n'
+             '  "C1" (default), "C2", "C4", "D2-", "D2|",\n'
+             '  "D2/", "D2\\", "D4+", "D4x", and "D8".\n'
+             'Symmetry is applied relative to the center of the\n'
+             'search area. Always enclose the symmetry type in\n'
+             'double quotes (""). For D2| and D2\\ symmetries you\n'
+             'may need to type "D2\\|" and "D2\\\\" respectively.'
+    )
+    parser.add_argument(
         "-d", "--distance",
         type=non_negative_int,
         default=None,
@@ -74,6 +90,14 @@ def parse_arguments():
         help="The state of the cells at the boundary of the search\n"
              "area (default: 'off'). If 'any' is chosen, then the CA\n"
              "rules will not be applied at the boundary."
+    )
+    parser.add_argument(
+        "--prefer_higher_symmetry",
+        action="store_true",
+        help="Give preference to optimal solutions with higher\n"
+             "levels of symmetry. You should only use this option if\n"
+             "there is a chance of finding a symmetric solution, as\n"
+             "it can cause large searches to take a bit longer."
     )
     parser.add_argument(
         "--solution_only",
@@ -100,10 +124,10 @@ def parse_rotor_descriptor(input_string):
             )+
         )
     """, re.VERBOSE)
-    match = RE_ROTOR.match(input_string)
-    if not match:
+    re_match = RE_ROTOR.match(input_string)
+    if not re_match:
         return None, None
-    rulestring, height, width, grid = match.groups()
+    rulestring, height, width, grid = re_match.groups()
     grid = grid.split()
     if not grid:
         return None, None

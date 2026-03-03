@@ -25,8 +25,9 @@ Thanks to Jeremy Dover for the original idea and implementation that inspired th
 
 ## Usage
 ```
-usage: stator_optimizer.py [-h] [-a LEFT RIGHT TOP BOTTOM] [-d DISTANCE]
-                           [-b {off,any}] [--solution_only]
+usage: stator_optimizer.py [-h] [-a LEFT RIGHT TOP BOTTOM] [-s SYMMETRY]
+                           [-d DISTANCE] [-b {off,any}]
+                           [--prefer_higher_symmetry] [--solution_only]
                            input_file ticks
 
 A program to optimize the stator of patterns in Life-like cellular automata.
@@ -58,6 +59,15 @@ options:
   -a LEFT RIGHT TOP BOTTOM, --adjust LEFT RIGHT TOP BOTTOM
                         Expand the search box by the given distances. Negative
                         values contract the search box.
+  -s SYMMETRY, --symmetry SYMMETRY
+                        Force the stator to have the given symmetry type.
+                        Available types are:
+                          "C1" (default), "C2", "C4", "D2-", "D2|",
+                          "D2/", "D2\", "D4+", "D4x", and "D8".
+                        Symmetry is applied relative to the center of the
+                        search area. Always enclose the symmetry type in
+                        double quotes (""). For D2| and D2\ symmetries you
+                        may need to type "D2\|" and "D2\\" respectively.
   -d DISTANCE, --distance DISTANCE
                         Force stator cells to be within this distance of the
                         rotor using the taxicab metric. For still life searches
@@ -67,6 +77,11 @@ options:
                         The state of the cells at the boundary of the search
                         area (default: 'off'). If 'any' is chosen, then the CA
                         rules will not be applied at the boundary.
+  --prefer_higher_symmetry
+                        Give preference to optimal solutions with higher
+                        levels of symmetry. You should only use this option if
+                        there is a chance of finding a symmetric solution, as
+                        it can cause large searches to take a bit longer.
   --solution_only       Only print the solution to the optimization problem.
                         If there is no solution or if the input pattern is
                         already optimal, print nothing.

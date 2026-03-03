@@ -13,13 +13,13 @@ def get_rulestring(rle, lt):
 
 
 def get_rule(rulestring):
-    match = re.match(r"b([2-8]*)s([0-8]*)$", rulestring)
-    if not match:
+    re_match = re.match(r"b([2-8]*)s([0-8]*)$", rulestring)
+    if not re_match:
         raise ValueError(
             f"Invalid rule '{rulestring}': "
             "only Life-like rules without B0 or B1 are supported."
         )
-    birth_digits, survival_digits = match.groups()
+    birth_digits, survival_digits = re_match.groups()
 
     if not survival_digits:
         raise ValueError(
