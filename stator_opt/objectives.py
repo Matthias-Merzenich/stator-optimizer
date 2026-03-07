@@ -201,8 +201,8 @@ def apply_box_objectives(
     constraint_needed = {
         "right": {"right", "width", "area"} & objective_set,
         "left": {"left", "width", "area"} & objective_set,
-        "bottom": {"bottom", "width", "area"} & objective_set,
-        "top": {"top", "width", "area"} & objective_set,
+        "bottom": {"bottom", "height", "area"} & objective_set,
+        "top": {"top", "height", "area"} & objective_set,
         "ne": {"ne", "diag"} & objective_set,
         "sw": {"sw", "diag"} & objective_set,
         "se": {"se", "back_diag"} & objective_set,
