@@ -139,13 +139,11 @@ def main():
 
     verbose_print("Setting up optimization search...")
     model = cp_model.CpModel()
-    stator_int = {}
-    stator_bool = {}
-    build_model(
+
+    # Apply the life rules for the stator cells and rotor transitions.
+    stator_vars = build_model(
         rulestring,
         model,
-        stator_int,
-        stator_bool,
         stator_cells,
         boundary_cells,
         args.boundary,
@@ -155,19 +153,23 @@ def main():
         rotor_transitions
     )
 
+    # Apply constraints relating to the bounding box and bounding diamond.
     box_vars, objective_dict = apply_box_objectives(
-        model, the_pattern, args.objectives, stator_array, stator_bool
+        model, the_pattern, args.objectives, stator_vars, stator_array
     )
 
+    # Apply constraints relating to symmetry.
     symm_bool = apply_symmetry_objective(
-        model, args.objectives, args.symmetry, stator_bool, stator_array
+        model, args.objectives, args.symmetry, stator_vars, stator_array
     )
 
+    # Finish building objective_dict, which is used to construct the
+    # expression that we want to minimize.
     max_pop = len(stator_cells)
     max_symm = sum(SYMMETRY_WEIGHTS.values())
     pop_var = model.NewIntVar(0, max_pop, 'stator_pop')
     symm_var = model.NewIntVar(0, max_symm, 'symmetry_sum')
-    model.Add(pop_var == cp_model.LinearExpr.Sum(list(stator_bool.values())))
+    model.Add(pop_var == cp_model.LinearExpr.Sum(list(stator_vars.values())))
     model.Add(symm_var == cp_model.LinearExpr.WeightedSum(
         [symm_bool[symm] for symm in SYMMETRY_WEIGHTS],
         [SYMMETRY_WEIGHTS[symm] for symm in SYMMETRY_WEIGHTS]
@@ -181,10 +183,14 @@ def main():
     total_objective, init_objective = get_objective_expression(
         the_pattern, objective_stats, objective_dict, args.objectives
     )
-
     model.Minimize(total_objective)
 
     solver = cp_model.CpSolver()
+
+    verbose_print(f"  Undetermined cells:"
+                  f" {len(stator_cells - forced_on_cells - forced_off_cells)}")
+    verbose_print(f"  Variables: {len(model.Proto().variables)}")
+    verbose_print(f"  Constraints: {len(model.Proto().constraints)}")
 
     verbose_print("Beginning optimization search...\n")
 
@@ -210,11 +216,11 @@ def main():
         ):
             output_pattern = the_pattern.initial_two_state & the_pattern.rotor
             for x,y in stator_cells:
-                if solver.Value(stator_int[x,y]) == 1:
+                if solver.Value(stator_vars[x,y]) == 1:
                     output_pattern[x,y] = 1
 
             objective_stats.store_final_stats(
-                solver, stator_int, box_vars, symm_bool
+                solver, stator_vars, box_vars, symm_bool
             )
             verbose_print(objective_stats.get_stats_string(args.objectives))
             print(clean_rle(output_pattern.rle_string()))

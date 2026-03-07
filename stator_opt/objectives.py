@@ -152,7 +152,7 @@ class ObjectiveStats:
 
 
 def apply_box_objectives(
-    model, the_pattern, objectives, stator_array, stator_bool
+    model, the_pattern, objectives, stator_vars, stator_array
 ):
     max_x, max_y = stator_array.max(axis=0).tolist()
     min_x, min_y = stator_array.min(axis=0).tolist()
@@ -211,8 +211,8 @@ def apply_box_objectives(
 
     def cell_set(func, extremum):
         return [
-            func(x,y) * stator_bool[x,y] + (1 - stator_bool[x,y]) * extremum
-            for x,y in stator_bool
+            func(x,y) * stator_vars[x,y] + (1 - stator_vars[x,y]) * extremum
+            for x,y in stator_vars
         ]
 
     if constraint_needed["right"]:

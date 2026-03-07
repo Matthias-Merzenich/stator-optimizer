@@ -4,8 +4,6 @@ from .symmetry import symmetrize, transform
 
 def build_model(rulestring,
                 model,
-                stator_int,
-                stator_bool,
                 stator_cells,
                 boundary_cells,
                 boundary_state,
@@ -16,54 +14,50 @@ def build_model(rulestring,
                ):
     birth_at, survival_at = get_rule(rulestring)
 
+    stator_vars = {}
     for x,y in stator_cells:
-        stator_int[x,y] = model.NewIntVar(0,1,f"stator_int_{x}_{y}")
-        stator_bool[x,y] = model.NewBoolVar(f"stator_bool_{x}_{y}")
-        model.Add(stator_int[x,y] == 1).OnlyEnforceIf(stator_bool[x,y])
-        model.Add(stator_int[x,y] == 0).OnlyEnforceIf(stator_bool[x,y].Not())
+        stator_vars[x,y] = model.NewBoolVar(f"stator_{x}_{y}")
 
         # If a forced-on cell is in the forced-off boundary, we
         # prioritize the forced-off setting, because the cell
         # is outside of the search area.
         if (x,y) in forced_off_cells:
-            model.Add(stator_int[x,y] == 0)
+            model.Add(stator_vars[x,y] == 0)
         elif (x,y) in forced_on_cells:
-            model.Add(stator_int[x,y] == 1)
+            model.Add(stator_vars[x,y] == 1)
+
+    def get_stator_sum(x, y):
+        return sum( stator_vars[x+u, y+v]
+                    for u in [-1,0,1] for v in [-1,0,1]
+                    if (u,v) != (0,0) and (x+u, y+v) in stator_cells
+                  )
 
     # Apply the CA rules to the stator cells
     for x,y,rotor_sum in stator_neighbor_counts:
         if (x,y) in boundary_cells and boundary_state == "any":
             continue
-        stator_sum = sum(   stator_int[x+u, y+v]
-                            for u in [-1,0,1] for v in [-1,0,1]
-                            if (u,v) != (0,0) and (x+u, y+v) in stator_cells
-                        )
-        neighbor_sum = rotor_sum + stator_sum
+        neighbor_sum = get_stator_sum(x,y) + rotor_sum
         if rulestring == "b3s23":
-            model.AddLinearConstraint(neighbor_sum, 2, 3).OnlyEnforceIf(
-                stator_bool[x,y]
-            )
             model.Add(neighbor_sum != 3).OnlyEnforceIf(
-                stator_bool[x,y].Not()
+                stator_vars[x,y].Not()
+            )
+            model.AddLinearConstraint(neighbor_sum, 2, 3).OnlyEnforceIf(
+                stator_vars[x,y]
             )
         else:
             for count in range(9):
                 if birth_at[count]:
                     model.Add(neighbor_sum != count).OnlyEnforceIf(
-                        stator_bool[x,y].Not()
+                        stator_vars[x,y].Not()
                     )
                 if not survival_at[count]:
                     model.Add(neighbor_sum != count).OnlyEnforceIf(
-                        stator_bool[x,y]
+                        stator_vars[x,y]
                     )
 
     # Apply the CA rules to the rotor transitions
     for x,y,rotor_sum,state_0,state_1 in rotor_transitions:
-        stator_sum = sum(   stator_int[x+u, y+v]
-                            for u in [-1,0,1] for v in [-1,0,1]
-                            if (u,v) != (0,0) and (x+u, y+v) in stator_cells
-                        )
-        neighbor_sum = rotor_sum + stator_sum
+        neighbor_sum = get_stator_sum(x, y) + rotor_sum
         if rulestring == "b3s23":
             if state_0 == 0 and state_1 == 0:
                 model.Add(neighbor_sum != 3)
@@ -84,6 +78,8 @@ def build_model(rulestring,
                     model.Add(neighbor_sum != count)
                 if state_0 == 1 and state_1 == 1 and not survival_at[count]:
                     model.Add(neighbor_sum != count)
+
+    return stator_vars
 
 
 def apply_conditional_transform(
