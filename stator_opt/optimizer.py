@@ -90,8 +90,7 @@ def apply_conditional_transform(
     model,
     transformation,
     trans_bool,
-    stator_int,
-    stator_cells,
+    stator_vars,
     stator_array
 ):
     SYMM_FROM_TRANS = {
@@ -111,11 +110,12 @@ def apply_conditional_transform(
                                   ).tolist()
     for cell_1, cell_2 in zip(symm_stator_array.tolist(), transformed_coords):
         model.Add(
-            stator_int[tuple(cell_1)] == stator_int[tuple(cell_2)]
+            stator_vars[tuple(cell_1)] == stator_vars[tuple(cell_2)]
         ).OnlyEnforceIf(trans_bool[transformation])
 
+    stator_cells = set(stator_vars)
     symm_stator_cells = set(map(tuple, symm_stator_array.tolist()))
     for cell in stator_cells - symm_stator_cells:
         model.Add(
-            stator_int[cell] == 0
+            stator_vars[cell] == 0
         ).OnlyEnforceIf(trans_bool[transformation])

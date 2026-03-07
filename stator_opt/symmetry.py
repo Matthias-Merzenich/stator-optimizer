@@ -29,10 +29,7 @@ def transform(coords, mode, center):
     return (transform_dict[mode](coords*2 - center) + center) // 2
 
 
-def symmetrize(coords, symmetry):
-    # This is double the actual center of the coordinates.
-    # The purpose of this is to avoid half-integer centers.
-    center = coords.min(axis=0) + coords.max(axis=0)
+def symmetrize_with_center(coords, symmetry, center):
     if (
         symmetry in ["C4", "D2/", "D2\\", "D4X", "D8"]
         and (center[0] % 2 != center[1] % 2)
@@ -60,3 +57,24 @@ def symmetrize(coords, symmetry):
             new_coords, transform(new_coords, mode, center)
         )
     return new_coords, center
+
+
+def symmetrize(coords, symmetry):
+    # This is double the actual center of the coordinates.
+    # The purpose of this is to avoid half-integer centers.
+    center = coords.min(axis=0) + coords.max(axis=0)
+    return symmetrize_with_center(coords, symmetry, center)
+
+
+# This checks if the stator is symmetric about the center
+# of the search area, not the center of the original pattern.
+def has_symmetric_stator(pattern, symmetry):
+    stator_array = pattern.stator.coords()
+    center = stator_array.min(axis=0) + stator_array.max(axis=0)
+    on_stator_array = pattern.initial_stator_on.coords()
+    symmetric_stator_array, _ = symmetrize_with_center(
+        on_stator_array, symmetry, center
+    )
+    on_stator_cells = set(map(tuple, on_stator_array.tolist()))
+    symmetric_stator_cells = set(map(tuple, symmetric_stator_array.tolist()))
+    return (on_stator_cells == symmetric_stator_cells)

@@ -92,12 +92,19 @@ def parse_arguments():
              "rules will not be applied at the boundary."
     )
     parser.add_argument(
-        "--prefer_higher_symmetry",
-        action="store_true",
-        help="Give preference to optimal solutions with higher\n"
-             "levels of symmetry. You should only use this option if\n"
-             "there is a chance of finding a symmetric solution, as\n"
-             "it can cause large searches to take a bit longer."
+        "-o", "--objectives",
+        type=str.lower,
+        nargs="*",
+        choices=["min_pop", "max_pop", "area", "width", "height", "symmetry",
+                 "left", "right", "top", "bottom", "nw", "ne", "sw", "se",
+                 "diag", "back_diag"],
+        default=["min_pop"],
+        metavar="OBJECTIVES",
+        help="A list of properties to optimize ordered by priority.\n"
+             "Available options are:\n"
+             "  min_pop, max_pop, area, width, height, symmetry,\n"
+             "  left, right, top, bottom, nw, ne, sw, se, diag,\n"
+             "  and back_diag."
     )
     parser.add_argument(
         "--solution_only",

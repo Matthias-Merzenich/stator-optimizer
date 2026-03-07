@@ -4,7 +4,14 @@ from ortools.sat.python import cp_model
 
 from stator_opt.analysis import get_transition_sets
 from stator_opt.environment import validate_lifelib
-from stator_opt.optimizer import apply_conditional_transform, build_model
+from stator_opt.objectives import (
+    SYMMETRY_WEIGHTS,
+    ObjectiveStats,
+    apply_box_objectives,
+    apply_symmetry_objective,
+    get_objective_expression,
+)
+from stator_opt.optimizer import build_model
 from stator_opt.parsers import (
     parse_arguments,
     parse_rotor_descriptor,
@@ -31,6 +38,16 @@ def main():
     args = parse_arguments()
     adjust_left, adjust_right, adjust_top, adjust_bottom = args.adjust
     verbose_print = print if not args.solution_only else lambda *a, **k: None
+
+    unique_objectives = []
+    for objective in args.objectives:
+        if objective not in unique_objectives:
+            unique_objectives.append(objective)
+    if "max_pop" in unique_objectives and "min_pop" in unique_objectives:
+        max_pop_index = unique_objectives.index("max_pop")
+        min_pop_index = unique_objectives.index("min_pop")
+        unique_objectives.pop(max(max_pop_index, min_pop_index))
+    args.objectives = unique_objectives
 
     rle = read_file(args.input_file)
 
@@ -73,13 +90,6 @@ def main():
 
     the_pattern = PatternStats(initial_pattern, lt)
 
-    verbose_print(f"Initial population: {the_pattern.initial_population}")
-    verbose_print(f"Initial bounding box:"
-                  f" {the_pattern.width} x {the_pattern.height}")
-    verbose_print(f"Search bounding box:"
-                  f" {the_pattern.width + adjust_left + adjust_right}"
-                  f" x {the_pattern.height + adjust_top + adjust_bottom}\n")
-
     verbose_print("Analyzing pattern...")
 
     the_pattern.analyze_pattern(
@@ -117,8 +127,13 @@ def main():
     stator_array = the_pattern.stator.coords()
     stator_cells = stator_array.tolist()
     stator_cells = set(map(tuple, stator_cells))
+    if not stator_cells:
+        raise RuntimeError("Search area is empty.")
     boundary_cells = the_pattern.stator_boundary.coords().tolist()
     boundary_cells = set(map(tuple, boundary_cells))
+
+    objective_stats = ObjectiveStats(the_pattern)
+    verbose_print(objective_stats.get_stats_string(args.objectives))
 
     stator_neighbor_counts, rotor_transitions = get_transition_sets(the_pattern)
 
@@ -140,69 +155,34 @@ def main():
         rotor_transitions
     )
 
-    # Transformation sets that generate the given symmetry
-    FORCED_TRANSFORMATIONS = {
-        "C1": [],
-        "C2": ["rotate_180"],
-        "C4": ["rotate_90"],
-        "D2-": ["flip_y"],
-        "D2|": ["flip_x"],
-        "D2/": ["flip_diag"],
-        "D2\\": ["flip_reverse_diag"],
-        "D4+": ["flip_x", "flip_y"],
-        "D4X": ["flip_diag", "flip_reverse_diag"],
-        "D8": ["flip_x", "flip_diag"]
-    }
+    box_vars, objective_dict = apply_box_objectives(
+        model, the_pattern, args.objectives, stator_array, stator_bool
+    )
 
-    trans_bool = {}
-    symm_bool = {}
+    symm_bool = apply_symmetry_objective(
+        model, args.objectives, args.symmetry, stator_bool, stator_array
+    )
 
-    TRANSFORMATION_LIST = ["rotate_90", "rotate_180", "flip_x", "flip_y",
-                           "flip_diag", "flip_reverse_diag"]
-    for trans in TRANSFORMATION_LIST:
-        trans_bool[trans] = (model.NewBoolVar(f"trans_bool_{trans}"))
+    max_pop = len(stator_cells)
+    max_symm = sum(SYMMETRY_WEIGHTS.values())
+    pop_var = model.NewIntVar(0, max_pop, 'stator_pop')
+    symm_var = model.NewIntVar(0, max_symm, 'symmetry_sum')
+    model.Add(pop_var == cp_model.LinearExpr.Sum(list(stator_bool.values())))
+    model.Add(symm_var == cp_model.LinearExpr.WeightedSum(
+        [symm_bool[symm] for symm in SYMMETRY_WEIGHTS],
+        [SYMMETRY_WEIGHTS[symm] for symm in SYMMETRY_WEIGHTS]
+    ))
+    objective_dict.update({
+        "min_pop":  [pop_var, "min", max_pop],
+        "max_pop":  [pop_var, "max", max_pop],
+        "symmetry": [symm_var, "max", max_symm]
+    })
 
-    SYMMETRY_LIST = ["C2", "C4", "D2-", "D2|", "D2/",
-                     "D2\\", "D4+", "D4X", "D8"]
-    for symm in SYMMETRY_LIST:
-        symm_bool[symm] = model.NewBoolVar(f"symm_bool_{symm}")
-        for trans in FORCED_TRANSFORMATIONS[symm]:
-            model.AddImplication(symm_bool[symm], trans_bool[trans])
+    total_objective, init_objective = get_objective_expression(
+        the_pattern, objective_stats, objective_dict, args.objectives
+    )
 
-    transformations = list(FORCED_TRANSFORMATIONS[args.symmetry])
-    if args.prefer_higher_symmetry:
-        transformations = TRANSFORMATION_LIST
-
-    for transformation in transformations:
-        apply_conditional_transform(
-            model,
-            transformation,
-            trans_bool,
-            stator_int,
-            stator_cells,
-            stator_array
-        )
-
-    # Cause transformations to be applied unconditionally
-    for trans in FORCED_TRANSFORMATIONS[args.symmetry]:
-        model.Add(trans_bool[trans] == 1)
-
-    # Use the input pattern as a hint to the solver
-    intial_stator_on_cells = set(map(tuple, (   the_pattern.stator
-                                                & the_pattern.initial_stator_on
-                                            ).coords().tolist()))
-    intial_stator_off_cells = set(map(tuple, (  the_pattern.stator
-                                                - the_pattern.initial_stator_on
-                                             ).coords().tolist()))
-    for x,y in intial_stator_on_cells:
-        model.AddHint(stator_int[x,y], 1)
-    for x,y in intial_stator_off_cells:
-        model.AddHint(stator_int[x,y], 1)
-
-    stator_population = sum(stator_int[x,y] for x,y in stator_cells)
-    symmetry_objective = sum(symm_bool[symm] for symm in SYMMETRY_LIST)
-
-    model.Minimize(20 * stator_population - symmetry_objective)
+    model.Minimize(total_objective)
 
     solver = cp_model.CpSolver()
 
@@ -212,36 +192,40 @@ def main():
 
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
         if status == cp_model.OPTIMAL:
-            verbose_print("Optimal solution found.\n")
+            verbose_print("Optimal solution found.")
         elif status == cp_model.FEASIBLE:
-            verbose_print("Non-optimal solution found.\n")
-
-        output_pattern = the_pattern.initial_two_state & the_pattern.rotor
-        for x,y in stator_cells:
-            if solver.Value(stator_int[x,y]) == 1:
-                output_pattern[x,y] = 1
+            verbose_print("Non-optimal solution found.")
 
         # Print the pattern if at least one of the following conditions holds:
-        # * The solution has a smaller population than the original.
+        # * The solution has a better objective value than the original.
         # * The original stator contains a cell outside the search area.
         # * A cell in the original stator is forced off in the solution.
         # * A cell not in the original stator is forced on in the solution.
         if (
-            output_pattern.population < the_pattern.initial_population
+            round(solver.ObjectiveValue()) < init_objective
             or (the_pattern.initial_stator_on
                 - (the_pattern.stator - the_pattern.stator_boundary)).nonempty()
             or (forced_off & the_pattern.initial_stator_on).nonempty()
             or (forced_on - the_pattern.initial_stator_on).nonempty()
         ):
-            verbose_print(f"Final population: {output_pattern.population}")
+            output_pattern = the_pattern.initial_two_state & the_pattern.rotor
+            for x,y in stator_cells:
+                if solver.Value(stator_int[x,y]) == 1:
+                    output_pattern[x,y] = 1
+
+            objective_stats.store_final_stats(
+                solver, stator_int, box_vars, symm_bool
+            )
+            verbose_print(objective_stats.get_stats_string(args.objectives))
             print(clean_rle(output_pattern.rle_string()))
         elif status == cp_model.OPTIMAL:
-            verbose_print("Input pattern is already optimal.")
+            verbose_print("\nInput pattern is already optimal.")
         else:
-            verbose_print("New pattern is not smaller than the input pattern.")
+            verbose_print("\nNew pattern is not more optimal than the"
+                          " input pattern.")
     elif status == cp_model.UNKNOWN:
         verbose_print("UNKNOWN: no solutions were found, but the model"
-                      "was not proven infeasible.")
+                      " was not proven infeasible.")
     elif status == cp_model.INFEASIBLE:
         verbose_print("INFEASIBLE: no solution possible.")
     verbose_print()

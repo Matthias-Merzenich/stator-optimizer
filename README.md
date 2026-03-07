@@ -26,8 +26,8 @@ Thanks to Jeremy Dover for the original idea and implementation that inspired th
 ## Usage
 ```
 usage: stator_optimizer.py [-h] [-a LEFT RIGHT TOP BOTTOM] [-s SYMMETRY]
-                           [-d DISTANCE] [-b {off,any}]
-                           [--prefer_higher_symmetry] [--solution_only]
+                           [-d DISTANCE] [-b {off,any}] [-o [OBJECTIVES ...]]
+                           [--solution_only]
                            input_file ticks
 
 A program to optimize the stator of patterns in Life-like cellular automata.
@@ -77,11 +77,12 @@ options:
                         The state of the cells at the boundary of the search
                         area (default: 'off'). If 'any' is chosen, then the CA
                         rules will not be applied at the boundary.
-  --prefer_higher_symmetry
-                        Give preference to optimal solutions with higher
-                        levels of symmetry. You should only use this option if
-                        there is a chance of finding a symmetric solution, as
-                        it can cause large searches to take a bit longer.
+  -o [OBJECTIVES ...], --objectives [OBJECTIVES ...]
+                        A list of properties to optimize ordered by priority.
+                        Available options are:
+                          min_pop, max_pop, area, width, height, symmetry,
+                          left, right, top, bottom, nw, ne, sw, se, diag,
+                          and back_diag.
   --solution_only       Only print the solution to the optimization problem.
                         If there is no solution or if the input pattern is
                         already optimal, print nothing.
