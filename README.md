@@ -25,8 +25,9 @@ Thanks to Jeremy Dover for the original idea and implementation that inspired th
 
 ## Usage
 ```
-usage: stator_optimizer.py [-h] [-a LEFT RIGHT TOP BOTTOM] [-s SYMMETRY]
-                           [-d DISTANCE] [-b {off,any}] [-o [OBJECTIVES ...]]
+usage: stator_optimizer.py [-h] [-a LEFT RIGHT TOP BOTTOM [{off,any}]]
+                           [-d {rotor,stator} DISTANCE [{off,any}]]
+                           [-s SYMMETRY] [-o [OBJECTIVES ...]]
                            [--solution_only]
                            input_file ticks
 
@@ -36,19 +37,19 @@ positional arguments:
   input_file            File containing the pattern to be optimized. When the
                         pattern is saved using a history rule, you can specify
                         stator cell states in the solution as follows:
-                        ------------------------------------------------
-                         history state | input state | solution state
-                        ---------------+-------------+------------------
-                         0 (black)     | off         | either on or off
-                         1 (green)     | on          | either on or off
-                         2 (blue)      | off         | off
-                         3 (white)     | on          | off
-                         4 (red)       | off         | on
-                         5 (yellow)    | on          | on
-                         6 (gray)      | off         | either on or off
+                          ------------------------------------------------
+                           history state | input state | solution state
+                          ---------------+-------------+------------------
+                           0 (black)     | off         | either on or off
+                           1 (green)     | on          | either on or off
+                           2 (blue)      | off         | off
+                           3 (white)     | on          | off
+                           4 (red)       | off         | on
+                           5 (yellow)    | on          | on
+                           6 (gray)      | off         | either on or off
                         This only applies to stator cells. If a cell is
-                        determined to be part of the rotor, then its state
-                        will not be changed in the solution.
+                        determined to be part of the rotor, then its state will
+                        not be changed in the solution.
                         Accepted input formats are RLE (.rle), macrocell (.mc),
                         and rotor descriptor format.
 
@@ -56,34 +57,35 @@ positional arguments:
 
 options:
   -h, --help            Show this help message and exit.
-  -a LEFT RIGHT TOP BOTTOM, --adjust LEFT RIGHT TOP BOTTOM
-                        Expand the search box by the given distances. Negative
-                        values contract the search box.
-  -s SYMMETRY, --symmetry SYMMETRY
+  -a, --adjust LEFT RIGHT TOP BOTTOM [{off,any}]
+                        Expand the search box by the given distances; negative
+                        values contract it. An optional boundary state can also
+                        be specified; if set to 'any', then the CA rules will
+                        not be applied at the boundary.
+  -d, --distance {rotor,stator} DISTANCE [{off,any}]
+                        Force stator cells to be within the given distance of
+                        either the rotor or the initial stator using the
+                        taxicab metric. To set distances from both the rotor
+                        and the stator, specify the option twice. For still
+                        life searches, the distance is measured from the forced
+                        cells, rather than the rotor. An optional boundary
+                        state can also be specified; if set to 'any', then the
+                        CA rules will not be applied at the boundary.
+  -s, --symmetry SYMMETRY
                         Force the stator to have the given symmetry type.
-                        Available types are:
+                        Available types:
                           "C1" (default), "C2", "C4", "D2-", "D2|",
                           "D2/", "D2\", "D4+", "D4x", and "D8".
                         Symmetry is applied relative to the center of the
-                        search area. Always enclose the symmetry type in
-                        double quotes (""). For D2| and D2\ symmetries you
-                        may need to type "D2\|" and "D2\\" respectively.
-  -d DISTANCE, --distance DISTANCE
-                        Force stator cells to be within this distance of the
-                        rotor using the taxicab metric. For still life searches
-                        the distance is applied to the forced cells, rather
-                        than the rotor.
-  -b {off,any}, --boundary {off,any}
-                        The state of the cells at the boundary of the search
-                        area (default: 'off'). If 'any' is chosen, then the CA
-                        rules will not be applied at the boundary.
-  -o [OBJECTIVES ...], --objectives [OBJECTIVES ...]
+                        search area. Always enclose the symmetry type in double
+                        quotes (""); for D2| and D2\ symmetries you may need to
+                        type "D2\|" and "D2\\", respectively.
+  -o, --optimize [OBJECTIVES ...]
                         A list of properties to optimize ordered by priority.
-                        Available options are:
+                        Available properties:
                           min_pop, max_pop, area, width, height, symmetry,
                           left, right, top, bottom, nw, ne, sw, se, diag,
                           and back_diag.
-  --solution_only       Only print the solution to the optimization problem.
-                        If there is no solution or if the input pattern is
-                        already optimal, print nothing.
+  --solution_only       Only print the solution. If no solution exists or if
+                        the input pattern is already optimal, print nothing.
 ```

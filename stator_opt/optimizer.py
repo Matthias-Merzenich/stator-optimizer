@@ -2,16 +2,17 @@ from .rules import get_rule
 from .symmetry import symmetrize, transform
 
 
+# Build the base model that applies the CA rules to
+# the stator and adjacent rotor.
 def build_model(rulestring,
                 model,
                 stator_cells,
-                boundary_cells,
-                boundary_state,
+                unforced_boundary_cells,
                 forced_on_cells,
                 forced_off_cells,
                 stator_neighbor_counts,
                 rotor_transitions
-               ):
+):
     birth_at, survival_at = get_rule(rulestring)
 
     stator_vars = {}
@@ -34,7 +35,7 @@ def build_model(rulestring,
 
     # Apply the CA rules to the stator cells
     for x,y,rotor_sum in stator_neighbor_counts:
-        if (x,y) in boundary_cells and boundary_state == "any":
+        if (x,y) in unforced_boundary_cells:
             continue
         neighbor_sum = get_stator_sum(x,y) + rotor_sum
         if rulestring == "b3s23":
@@ -82,6 +83,11 @@ def build_model(rulestring,
     return stator_vars
 
 
+# For the given transformation, add conditions so that the
+# pattern is invariant under the transformation if the
+# variable trans_bool[transformation] is True. The actual
+# state of trans_bool[transformation] is determined during
+# solving or set at run time.
 def apply_conditional_transform(
     model,
     transformation,

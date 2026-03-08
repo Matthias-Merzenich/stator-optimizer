@@ -29,6 +29,7 @@ from stator_opt.setup import create_ruletable_session, get_pattern
 # need lifelib version 2.5.9 or higher.
 
 
+# lifelib adds an extra comment line to RLEs. This function removes it.
 def clean_rle(rle):
     return "\n".join([line for line in rle.splitlines()
                       if not line.startswith('#')])
@@ -36,9 +37,10 @@ def clean_rle(rle):
 
 def main():
     args = parse_arguments()
-    adjust_left, adjust_right, adjust_top, adjust_bottom = args.adjust
     verbose_print = print if not args.solution_only else lambda *a, **k: None
 
+    # Remove duplicate objectives and disallow simultaneous
+    # inclusion of both "max_pop" and "min_pop".
     unique_objectives = []
     for objective in args.objectives:
         if objective not in unique_objectives:
@@ -52,7 +54,7 @@ def main():
     rle = read_file(args.input_file)
 
     rulestring, grid = parse_rotor_descriptor(rle)
-    if grid is not None:
+    if grid is not None:    # Rotor descriptor format detected.
         lifelib = validate_lifelib(need_latest_lifelib=True)
 
         rulestring = lifelib.sanirule(rulestring)
@@ -71,10 +73,15 @@ def main():
         initial_pattern = lt5.pattern(grid_rle)
         forced_on = lt.pattern("", rulestring)
         forced_off = lt.pattern("", rulestring)
-    else:
+    else:   # This runs if the pattern is not in rotor descriptor format.
         lifelib = validate_lifelib()
 
-        rulestring = get_rulestring(rle, lifelib.load_rules("life").lifetree())
+        rulestring = get_rulestring(rle, lifelib.load_rules(
+            "b3s23",
+            "bs8",
+            "b12345678s012345678",
+            "b1e2-cn3-c4-c5678s012345678"
+        ).lifetree())
         get_rule(rulestring)    # Validate the rule.
 
         sess = lifelib.load_rules(
@@ -88,38 +95,72 @@ def main():
 
         initial_pattern, forced_on, forced_off = get_pattern(rle, lt, lt5)
 
+    # Initialise the_pattern, which actually includes many
+    # subpatterns used for building the solver model.
     the_pattern = PatternStats(initial_pattern, lt)
 
     verbose_print("Analyzing pattern...")
 
+    # From the input pattern, build various additional
+    # patterns used to construct the solver model.
     the_pattern.analyze_pattern(
         args.ticks,
-        args.adjust,
+        args.adjust["adjustments"],
         args.distance
     )
 
-    forced_on &= the_pattern.stator
-    forced_off &= the_pattern.stator
-
     # For still life searches, the distance argument is
     # applied to the forced cells, rather than the rotor.
-    if args.distance is not None and the_pattern.rotor.empty():
-        final_mask = the_pattern.stator - the_pattern.stator_boundary
+    if (args.distance["rotor"]["distance"] is not None
+        and the_pattern.rotor.empty()
+    ):
         the_pattern.stator = lt.pattern("", "b1e2-cn3-c4-c5678s012345678")
         the_pattern.stator += forced_on + forced_off
-        the_pattern.stator = the_pattern.stator[args.distance]
-        the_pattern.stator &= final_mask
+        the_distance = args.distance["rotor"]["distance"]
+        the_pattern.stator = the_pattern.stator[the_distance]
+        the_pattern.stator &= the_pattern.stator_without_rotor_dist
 
-        the_pattern.stator_boundary = lt.pattern("", "b12345678s012345678")
-        the_pattern.stator_boundary += the_pattern.stator
-        the_pattern.stator_boundary = (
-            the_pattern.stator_boundary[1] - the_pattern.stator
+        the_pattern.stator_boundary["rotor"] = (
+            lt.pattern("", "b12345678s012345678")
         )
-        the_pattern.stator += the_pattern.stator_boundary
+        the_pattern.stator_boundary["rotor"] += the_pattern.stator
+        the_pattern.stator_boundary["rotor"] = (
+            (the_pattern.stator_boundary["rotor"])[1] - the_pattern.stator
+        )
+        for source in ["box", "rotor", "stator"]:
+            the_pattern.stator += the_pattern.stator_boundary[source]
 
-    if args.boundary == "off":
-        forced_off += the_pattern.stator_boundary
+    # base_stator is the stator without the stator boundaries.
+    base_stator = lt.pattern("", "b12345678s012345678")
+    base_stator += the_pattern.stator
+    for source in ["box", "rotor", "stator"]:
+        base_stator -= the_pattern.stator_boundary[source]
 
+    # Ignore forced cells that are not in the search area.
+    forced_on &= base_stator
+    forced_off &= base_stator
+
+    # Determine which boundary cells should be off and
+    # which should be unchecked. If a boundary cell is
+    # off in one boundary and unchecked in athother,
+    # then the off state is preferred.
+    any_boundary = lt.pattern("", "b12345678s012345678")
+    off_boundary = lt.pattern("", "b12345678s012345678")
+    for source in ["rotor", "stator"]:
+        if args.distance[source]["boundary"] == "off":
+            off_boundary += the_pattern.stator_boundary[source]
+        else:
+            any_boundary += the_pattern.stator_boundary[source]
+    if args.adjust["boundary"] == "off":
+        off_boundary += the_pattern.stator_boundary["box"]
+    else:
+        any_boundary += the_pattern.stator_boundary["box"]
+    any_boundary -= off_boundary
+    forced_off += off_boundary
+
+    # Convert patterns to sets of coordinate tuples.
+    # tolist() is used to convert from numpy ints to
+    # Python native ints.
     forced_on_cells = forced_on.coords().tolist()
     forced_on_cells = set(map(tuple, forced_on_cells))
     forced_off_cells = forced_off.coords().tolist()
@@ -127,14 +168,17 @@ def main():
     stator_array = the_pattern.stator.coords()
     stator_cells = stator_array.tolist()
     stator_cells = set(map(tuple, stator_cells))
-    if not stator_cells:
+    if len(stator_cells - forced_on_cells - forced_off_cells) == 0:
         raise RuntimeError("Search area is empty.")
-    boundary_cells = the_pattern.stator_boundary.coords().tolist()
-    boundary_cells = set(map(tuple, boundary_cells))
+    unforced_boundary_cells = any_boundary.coords().tolist()
+    unforced_boundary_cells = set(map(tuple, unforced_boundary_cells))
 
+    # Get and print the initial stats that we want to optimize.
     objective_stats = ObjectiveStats(the_pattern)
     verbose_print(objective_stats.get_stats_string(args.objectives))
 
+    # Get the sets needed to apply the CA rules
+    # at the stator-rotor interface in the model.
     stator_neighbor_counts, rotor_transitions = get_transition_sets(the_pattern)
 
     verbose_print("Setting up optimization search...")
@@ -145,8 +189,7 @@ def main():
         rulestring,
         model,
         stator_cells,
-        boundary_cells,
-        args.boundary,
+        unforced_boundary_cells,
         forced_on_cells,
         forced_off_cells,
         stator_neighbor_counts,
@@ -180,12 +223,11 @@ def main():
         "symmetry": [symm_var, "max", max_symm]
     })
 
+    # Apply our objective expression to the model
     total_objective, init_objective = get_objective_expression(
         the_pattern, objective_stats, objective_dict, args.objectives
     )
     model.Minimize(total_objective)
-
-    solver = cp_model.CpSolver()
 
     verbose_print(f"  Undetermined cells:"
                   f" {len(stator_cells - forced_on_cells - forced_off_cells)}")
@@ -194,8 +236,10 @@ def main():
 
     verbose_print("Beginning optimization search...\n")
 
+    solver = cp_model.CpSolver()
     status = solver.Solve(model)
 
+    # Solving is finished, so process the results.
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
         if status == cp_model.OPTIMAL:
             verbose_print("Optimal solution found.")
@@ -209,8 +253,7 @@ def main():
         # * A cell not in the original stator is forced on in the solution.
         if (
             round(solver.ObjectiveValue()) < init_objective
-            or (the_pattern.initial_stator_on
-                - (the_pattern.stator - the_pattern.stator_boundary)).nonempty()
+            or (the_pattern.initial_stator_on - base_stator).nonempty()
             or (forced_off & the_pattern.initial_stator_on).nonempty()
             or (forced_on - the_pattern.initial_stator_on).nonempty()
         ):
