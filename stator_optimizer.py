@@ -196,9 +196,21 @@ def main():
         model, args.optimize, args.symmetry, stator_vars, stator_array
     )
 
+    # Apply constraints counting the number of cells changed
+    # from the initial pattern to the final pattern.
+    max_pop = len(stator_cells)
+    init_stator_on_cells = pattern_to_set(the_pattern.stator
+                                          & the_pattern.initial_stator_on)
+
+    init_stator_off_cells = pattern_to_set(the_pattern.stator
+                                           - the_pattern.initial_stator_on)
+    change_set = ([stator_vars[x, y] for x, y in init_stator_off_cells]
+                  + [1 - stator_vars[x, y] for x, y in init_stator_on_cells])
+    change_var = model.NewIntVar(0, max_pop, 'stator_change')
+    model.Add(change_var == cp_model.LinearExpr.Sum(change_set))
+
     # Finish building `objective_dict`, which is used to construct the
     # the objective expression to minimize.
-    max_pop = len(stator_cells)
     max_symm = sum(SYMMETRY_WEIGHTS.values())
     pop_var = model.NewIntVar(0, max_pop, 'stator_pop')
     symm_var = model.NewIntVar(0, max_symm, 'symmetry_sum')
@@ -208,9 +220,11 @@ def main():
         [SYMMETRY_WEIGHTS[symm] for symm in SYMMETRY_WEIGHTS]
     ))
     objective_dict.update({
-        "min_pop":  [pop_var, "min", max_pop],
-        "max_pop":  [pop_var, "max", max_pop],
-        "symmetry": [symm_var, "max", max_symm]
+        "min_pop":    [pop_var,    "min", max_pop],
+        "max_pop":    [pop_var,    "max", max_pop],
+        "min_change": [change_var, "min", max_pop],
+        "max_change": [change_var, "max", max_pop],
+        "symmetry":   [symm_var,   "max", max_symm]
     })
 
     # Apply the objective expression to the model
@@ -254,7 +268,7 @@ def main():
                     output_pattern[x,y] = 1
 
             objective_stats.store_final_stats(
-                solver, stator_vars, box_vars, symm_bool
+                solver, stator_vars, box_vars, symm_bool, change_var
             )
             verbose_print(objective_stats.get_stats_string(args.optimize))
             print(clean_rle(output_pattern.rle_string()))

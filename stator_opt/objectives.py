@@ -23,6 +23,9 @@ SYMMETRY_LIST = list(SYMMETRY_WEIGHTS)
 OBJECTIVE_ALIAS = {
     "min_pop": "Stator population",
     "max_pop": "Stator population",
+    "min_change": "Changed",
+    "max_change": "Changed",
+    "symmetry": "Symmetry",
     "left": "x_min",
     "right": "x_max",
     "top": "y_min",
@@ -48,8 +51,7 @@ OBJECTIVE_ALIAS = {
     "se_with_rotor": "se_max (with rotor)",
     "nw_with_rotor": "nw_min (with rotor)",
     "diag_with_rotor": "Diagonal (with rotor)",
-    "back_diag_with_rotor": "Backwards diagonal (with rotor)",
-    "symmetry": "Symmetry"
+    "back_diag_with_rotor": "Backwards diagonal (with rotor)"
 }
 
 
@@ -79,6 +81,8 @@ class ObjectiveStats:
             self.stats = {
                 "min_pop": the_pattern.initial_stator_on.population,
                 "max_pop": the_pattern.initial_stator_on.population,
+                "min_change": 0,
+                "max_change": 0,
                 "symmetry": sum(SYMMETRY_WEIGHTS[symm]
                                 for symm in init_symmetries),
                 "symmetry_name": (
@@ -91,6 +95,8 @@ class ObjectiveStats:
             self.stats = {
                 "min_pop": float("inf"),
                 "max_pop": - float("inf"),
+                "min_change": float("inf"),
+                "max_change": - float("inf"),
                 "symmetry": - float("inf"),
                 "symmetry_name": '"C1"',
                 "left": - float("inf"),    "left_with_rotor": - float("inf"),
@@ -108,7 +114,9 @@ class ObjectiveStats:
                 "back_diag": float("inf"), "back_diag_with_rotor": float("inf")
             }
 
-    def store_final_stats(self, solver, stator_vars, box_vars, symm_vars):
+    def store_final_stats(
+        self, solver, stator_vars, box_vars, symm_vars, change_var
+    ):
         self._status = "Final"
         final_symmetries = [
             symm for symm in SYMMETRY_LIST if solver.Value(symm_vars[symm])
@@ -119,6 +127,8 @@ class ObjectiveStats:
         self.stats = {
             "min_pop": final_stator_pop,
             "max_pop": final_stator_pop,
+            "min_change": solver.Value(change_var),
+            "max_change": solver.Value(change_var),
             "symmetry": sum(SYMMETRY_WEIGHTS[symm]
                             for symm in final_symmetries),
             "symmetry_name": (

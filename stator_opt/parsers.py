@@ -203,7 +203,7 @@ def parse_arguments():
         help='Force the stator to have the given symmetry type.\n'
              'Available types:\n'
              '  "C1" (default), "C2", "C4", "D2-", "D2|",\n'
-             '  "D2/", "D2\\", "D4+", "D4x", and "D8".\n'
+             '  "D2/", "D2\\", "D4+", "D4x", "D8".\n'
              'Symmetry is applied relative to the center of the '
              'search area. Always enclose the symmetry type in double '
              'quotes (""); for D2| and D2\\ symmetries you may need to '
@@ -219,13 +219,14 @@ def parse_arguments():
                  "height_with_rotor", "left_with_rotor", "right_with_rotor",
                  "top_with_rotor", "bottom_with_rotor", "nw_with_rotor",
                  "ne_with_rotor", "sw_with_rotor", "se_with_rotor",
-                 "diag_with_rotor", "back_diag_with_rotor"],
+                 "diag_with_rotor", "back_diag_with_rotor", "min_change",
+                 "max_change"],
         metavar="[OBJECTIVES ...]",
         help="A list of properties to optimize ordered by priority.\n"
              "Available properties:\n"
              "  min_pop, max_pop, area, width, height, symmetry,\n"
              "  left, right, top, bottom, nw, ne, sw, se, diag,\n"
-             "  and back_diag.\n"
+             "  back_diag, min_change, max_change.\n"
              "The calculations of these properties only use the "
              "stator. Append '_with_rotor' to also use the clipped "
              "rotor from the box specified by the -c option."
