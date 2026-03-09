@@ -122,11 +122,12 @@ def non_negative_int(value):
     try:
         i = int(value)
     except ValueError:
-        raise argparse.ArgumentTypeError("Value must be an integer."
-                                         f"Got: {value}")
+        raise argparse.ArgumentTypeError(
+            f"Value must be an integer. Got: {value}")
     if i < 0:
-        raise argparse.ArgumentTypeError("Value must be 0 or greater."
-                                         f"Got: {value}")
+        raise argparse.ArgumentTypeError(
+            f"Value must be 0 or greater. Got: {value}"
+        )
     return i
 
 
@@ -214,13 +215,30 @@ def parse_arguments():
         nargs="*",
         choices=["min_pop", "max_pop", "area", "width", "height", "symmetry",
                  "left", "right", "top", "bottom", "nw", "ne", "sw", "se",
-                 "diag", "back_diag"],
+                 "diag", "back_diag", "area_with_rotor", "width_with_rotor",
+                 "height_with_rotor", "left_with_rotor", "right_with_rotor",
+                 "top_with_rotor", "bottom_with_rotor", "nw_with_rotor",
+                 "ne_with_rotor", "sw_with_rotor", "se_with_rotor",
+                 "diag_with_rotor", "back_diag_with_rotor"],
         metavar="[OBJECTIVES ...]",
         help="A list of properties to optimize ordered by priority.\n"
              "Available properties:\n"
              "  min_pop, max_pop, area, width, height, symmetry,\n"
              "  left, right, top, bottom, nw, ne, sw, se, diag,\n"
-             "  and back_diag."
+             "  and back_diag.\n"
+             "The calculations of these properties only use the "
+             "stator. Append '_with_rotor' to also use the clipped "
+             "rotor from the box specified by the -c option."
+    )
+    parser.add_argument(
+        "-c", "--clip_rotor",
+        type=int,
+        nargs=4,
+        metavar=("LEFT", "RIGHT", "TOP", "BOTTOM"),
+        help="Expand or contract the clipped rotor box. The initial "
+            "box is the bounding box of the input pattern. This "
+            "option is only used when '_with_rotor' objectives are "
+            "specified by the -o option."
     )
     parser.add_argument(
         "--solution_only",
@@ -236,7 +254,8 @@ def parse_arguments():
             "stator": {"distance": None, "boundary": "off"}
         },
         boundary="off",
-        objectives=["min_pop"])
+        optimize=["min_pop"],
+        clip_rotor=[0, 0, 0, 0])
     return parser.parse_args()
 
 
@@ -283,6 +302,6 @@ def read_file(file_name):
         with open(file_name, 'r') as file:
             rle = file.read()
     except FileNotFoundError:
-        raise FileNotFoundError("Pattern file not found.")
+        raise FileNotFoundError(f"Pattern file not found: {file_name}")
 
     return rle

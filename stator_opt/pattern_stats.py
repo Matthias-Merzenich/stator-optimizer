@@ -14,8 +14,9 @@ class PatternStats:
         self.initial_two_state = lt.pattern("", rulestring)
         self.initial_two_state += self.initial
         self.rotor = lt.pattern("", "bs8")
+        self.clipped_rotor = lt.pattern("", "bs8")
         self.stator = lt.pattern("", "b12345678s012345678")
-        self.stator_without_rotor_dist = lt.pattern("", "b12345678s012345678")
+        self.base_stator = lt.pattern("", "b12345678s012345678")
         self.initial_stator_on = lt.pattern("", "b12345678s012345678")
         self.stator_boundary = {
             "box": lt.pattern("", "b12345678s012345678"),
@@ -23,30 +24,34 @@ class PatternStats:
             "stator": lt.pattern("", "b12345678s012345678")
         }
         self.adjacent_rotor = None      # Rotor cells with a stator neighbor.
-        self.distance_boundary_from_rotor = None
-        self.distance_boundary_from_init_stator = None
         self.rotor_phases = None
         self.change_envelopes = None
 
     @property
+    def is_history(self):
+        return self.initial.getrule().endswith("History")
+
+    @property
     def initial_population(self):
-        if self.initial.getrule().endswith("History"):
+        if self.is_history:
             return self.initial_two_state.population
         else:
             return float("inf")
 
     # Determine stator boundaries when using distance option
-    def set_dist_bound(self, source, distance_dict):
-        distance = distance_dict[source]["distance"]
-        if distance is None:
-            return self.stator
-
+    def set_dist_bound(self, source, distance_dict, forced=None):
         mask = self.stator.owner.pattern("", "b1e2-cn3-c4-c5678s012345678")
         if source == "rotor":
             mask += self.rotor
         elif source == "stator":
             mask += self.initial_stator_on
-        stator_within_dist = self.stator & mask[distance]
+        elif source == "forced":    # Only runs if self.rotor is empty.
+            mask += forced
+            source = "rotor"
+        distance = distance_dict[source]["distance"]
+        if distance is None or (source == "rotor" and mask.empty()):
+            return self.base_stator
+        stator_within_dist = self.base_stator & mask[distance]
         self.stator_boundary[source] = (
             stator_within_dist[1] - stator_within_dist - self.rotor
         )
@@ -57,33 +62,39 @@ class PatternStats:
     def make_stator(self, adjustments, distance_dict):
         adjust_left, adjust_right, adjust_top, adjust_bottom = adjustments
 
-        self.stator[    0 - adjust_left : self.width + adjust_right,
-                        0 - adjust_top : self.height + adjust_bottom
-                   ] = 1
-        self.stator -= self.rotor
-        self.stator_boundary["box"] = self.stator[1] - self.stator - self.rotor
+        self.base_stator[   0 - adjust_left : self.width + adjust_right,
+                            0 - adjust_top : self.height + adjust_bottom
+                        ] = 1
+        self.base_stator -= self.rotor
+        self.stator_boundary["box"] = (
+            self.base_stator[1] - self.base_stator - self.rotor
+        )
+        for source in ["stator", "rotor"]:
+            self.base_stator &= self.set_dist_bound(source, distance_dict)
 
-        self.stator &= self.set_dist_bound("stator", distance_dict)
-        # stator_without_rotor_dist is needed if the rotor is empty.
-        self.stator_without_rotor_dist += self.stator
-        self.stator &= self.set_dist_bound("rotor", distance_dict)
+        self.stator = self.base_stator[1] & (
+            self.base_stator
+            + self.stator_boundary["box"]
+            + self.stator_boundary["rotor"]
+            + self.stator_boundary["stator"]
+        )
 
-        for source in ["box", "rotor", "stator"]:
-            self.stator += self.stator_boundary[source]
-
-        self.adjacent_rotor = self.stator[1] & (self.rotor - self.rotor[1])
-
-    def analyze_pattern(self, ticks, adjustments, distance_dict):
-        pattern_is_history = self.initial.getrule().endswith("History")
-        if pattern_is_history:
+    def analyze_pattern(self, ticks, adjustments, rotor_clip, distance_dict):
+        clip_left, clip_right, clip_top, clip_bottom = rotor_clip
+        if self.is_history:
             final_pattern = self.initial[ticks]
             envelope = flatten_multistate(final_pattern)
             self.rotor += flatten_multistate(final_pattern ^ self.initial)
             self.initial_stator_on += envelope ^ self.rotor
         else:
             self.rotor += flatten_multistate(self.initial)
+        self.clipped_rotor[ 0 - clip_left : self.width + clip_right,
+                            0 - clip_top : self.height + clip_bottom
+                          ] = 1
+        self.clipped_rotor &= self.rotor
 
         self.make_stator(adjustments, distance_dict)
+        self.adjacent_rotor = self.stator[1] & (self.rotor - self.rotor[1])
 
         previous_phase = self.initial
         rotor_mask = self.adjacent_rotor[1] & self.rotor

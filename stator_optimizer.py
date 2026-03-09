@@ -37,19 +37,21 @@ def clean_rle(rle):
 
 def main():
     args = parse_arguments()
-    verbose_print = print if not args.solution_only else lambda *a, **k: None
+    def verbose_print(*print_args, **print_kwargs):
+        if not args.solution_only:
+            print(*print_args, **print_kwargs)
 
     # Remove duplicate objectives and disallow simultaneous
     # inclusion of both "max_pop" and "min_pop".
     unique_objectives = []
-    for objective in args.objectives:
+    for objective in args.optimize:
         if objective not in unique_objectives:
             unique_objectives.append(objective)
     if "max_pop" in unique_objectives and "min_pop" in unique_objectives:
         max_pop_index = unique_objectives.index("max_pop")
         min_pop_index = unique_objectives.index("min_pop")
         unique_objectives.pop(max(max_pop_index, min_pop_index))
-    args.objectives = unique_objectives
+    args.optimize = unique_objectives
 
     rle = read_file(args.input_file)
 
@@ -95,17 +97,18 @@ def main():
 
         initial_pattern, forced_on, forced_off = get_pattern(rle, lt, lt5)
 
-    # Initialise the_pattern, which actually includes many
+    # Initialise `the_pattern`, which actually includes many
     # subpatterns used for building the solver model.
     the_pattern = PatternStats(initial_pattern, lt)
 
     verbose_print("Analyzing pattern...")
 
-    # From the input pattern, build various additional
-    # patterns used to construct the solver model.
+    # Build various additional patterns from the input
+    # pattern that are used to construct the solver model.
     the_pattern.analyze_pattern(
         args.ticks,
         args.adjust["adjustments"],
+        args.clip_rotor,
         args.distance
     )
 
@@ -114,35 +117,24 @@ def main():
     if (args.distance["rotor"]["distance"] is not None
         and the_pattern.rotor.empty()
     ):
-        the_pattern.stator = lt.pattern("", "b1e2-cn3-c4-c5678s012345678")
-        the_pattern.stator += forced_on + forced_off
-        the_distance = args.distance["rotor"]["distance"]
-        the_pattern.stator = the_pattern.stator[the_distance]
-        the_pattern.stator &= the_pattern.stator_without_rotor_dist
-
-        the_pattern.stator_boundary["rotor"] = (
-            lt.pattern("", "b12345678s012345678")
+        the_pattern.base_stator &= the_pattern.set_dist_bound(
+            "forced", args.distance, forced_on + forced_off
         )
-        the_pattern.stator_boundary["rotor"] += the_pattern.stator
-        the_pattern.stator_boundary["rotor"] = (
-            (the_pattern.stator_boundary["rotor"])[1] - the_pattern.stator
-        )
-        for source in ["box", "rotor", "stator"]:
-            the_pattern.stator += the_pattern.stator_boundary[source]
 
-    # base_stator is the stator without the stator boundaries.
-    base_stator = lt.pattern("", "b12345678s012345678")
-    base_stator += the_pattern.stator
-    for source in ["box", "rotor", "stator"]:
-        base_stator -= the_pattern.stator_boundary[source]
+        the_pattern.stator = the_pattern.base_stator[1] & (
+            the_pattern.base_stator
+            + the_pattern.stator_boundary["box"]
+            + the_pattern.stator_boundary["rotor"]
+            + the_pattern.stator_boundary["stator"]
+        )
 
     # Ignore forced cells that are not in the search area.
-    forced_on &= base_stator
-    forced_off &= base_stator
+    forced_on &= the_pattern.base_stator
+    forced_off &= the_pattern.base_stator
 
     # Determine which boundary cells should be off and
     # which should be unchecked. If a boundary cell is
-    # off in one boundary and unchecked in athother,
+    # off in one boundary and unchecked in another,
     # then the off state is preferred.
     any_boundary = lt.pattern("", "b12345678s012345678")
     off_boundary = lt.pattern("", "b12345678s012345678")
@@ -159,25 +151,23 @@ def main():
     forced_off += off_boundary
 
     # Convert patterns to sets of coordinate tuples.
-    # tolist() is used to convert from numpy ints to
-    # Python native ints.
-    forced_on_cells = forced_on.coords().tolist()
-    forced_on_cells = set(map(tuple, forced_on_cells))
-    forced_off_cells = forced_off.coords().tolist()
-    forced_off_cells = set(map(tuple, forced_off_cells))
-    stator_array = the_pattern.stator.coords()
-    stator_cells = stator_array.tolist()
-    stator_cells = set(map(tuple, stator_cells))
-    if len(stator_cells - forced_on_cells - forced_off_cells) == 0:
+    # tolist() converts NumPy integers to Python ints.
+    def pattern_to_set(patt):
+        return set(map(tuple, patt.coords().tolist()))
+
+    forced_on_cells = pattern_to_set(forced_on)
+    forced_off_cells = pattern_to_set(forced_off)
+    unforced_boundary_cells = pattern_to_set(any_boundary)
+    stator_cells = pattern_to_set(the_pattern.stator)
+    if not (stator_cells - forced_on_cells - forced_off_cells):
         raise RuntimeError("Search area is empty.")
-    unforced_boundary_cells = any_boundary.coords().tolist()
-    unforced_boundary_cells = set(map(tuple, unforced_boundary_cells))
+    stator_array = the_pattern.stator.coords()
 
-    # Get and print the initial stats that we want to optimize.
+    # Compute and print the initial stats that we want to optimize.
     objective_stats = ObjectiveStats(the_pattern)
-    verbose_print(objective_stats.get_stats_string(args.objectives))
+    verbose_print(objective_stats.get_stats_string(args.optimize))
 
-    # Get the sets needed to apply the CA rules
+    # Compute the sets needed to apply the CA rules
     # at the stator-rotor interface in the model.
     stator_neighbor_counts, rotor_transitions = get_transition_sets(the_pattern)
 
@@ -198,16 +188,16 @@ def main():
 
     # Apply constraints relating to the bounding box and bounding diamond.
     box_vars, objective_dict = apply_box_objectives(
-        model, the_pattern, args.objectives, stator_vars, stator_array
+        model, the_pattern, args.optimize, stator_vars
     )
 
     # Apply constraints relating to symmetry.
     symm_bool = apply_symmetry_objective(
-        model, args.objectives, args.symmetry, stator_vars, stator_array
+        model, args.optimize, args.symmetry, stator_vars, stator_array
     )
 
-    # Finish building objective_dict, which is used to construct the
-    # expression that we want to minimize.
+    # Finish building `objective_dict`, which is used to construct the
+    # the objective expression to minimize.
     max_pop = len(stator_cells)
     max_symm = sum(SYMMETRY_WEIGHTS.values())
     pop_var = model.NewIntVar(0, max_pop, 'stator_pop')
@@ -223,9 +213,9 @@ def main():
         "symmetry": [symm_var, "max", max_symm]
     })
 
-    # Apply our objective expression to the model
+    # Apply the objective expression to the model
     total_objective, init_objective = get_objective_expression(
-        the_pattern, objective_stats, objective_dict, args.objectives
+        the_pattern, objective_stats, objective_dict, args.optimize
     )
     model.Minimize(total_objective)
 
@@ -240,7 +230,7 @@ def main():
     status = solver.Solve(model)
 
     # Solving is finished, so process the results.
-    if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+    if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
         if status == cp_model.OPTIMAL:
             verbose_print("Optimal solution found.")
         elif status == cp_model.FEASIBLE:
@@ -253,7 +243,8 @@ def main():
         # * A cell not in the original stator is forced on in the solution.
         if (
             round(solver.ObjectiveValue()) < init_objective
-            or (the_pattern.initial_stator_on - base_stator).nonempty()
+            or (the_pattern.initial_stator_on
+                - the_pattern.base_stator).nonempty()
             or (forced_off & the_pattern.initial_stator_on).nonempty()
             or (forced_on - the_pattern.initial_stator_on).nonempty()
         ):
@@ -265,7 +256,7 @@ def main():
             objective_stats.store_final_stats(
                 solver, stator_vars, box_vars, symm_bool
             )
-            verbose_print(objective_stats.get_stats_string(args.objectives))
+            verbose_print(objective_stats.get_stats_string(args.optimize))
             print(clean_rle(output_pattern.rle_string()))
         elif status == cp_model.OPTIMAL:
             verbose_print("\nInput pattern is already optimal.")
