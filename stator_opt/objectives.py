@@ -25,6 +25,7 @@ OBJECTIVE_ALIAS = {
     "max_pop": "Stator population",
     "min_change": "Changed",
     "max_change": "Changed",
+    "boundary_pop": "Boundary population",
     "symmetry": "Symmetry",
     "left": "x_min",
     "right": "x_max",
@@ -73,7 +74,7 @@ class Extrema:
 
 
 class ObjectiveStats:
-    def __init__(self, the_pattern):
+    def __init__(self, the_pattern, any_boundary):
         self._status = "Initial"
         if the_pattern.is_history:
             init_symmetries = [symm for symm in SYMMETRY_LIST
@@ -83,6 +84,11 @@ class ObjectiveStats:
                 "max_pop": the_pattern.initial_stator_on.population,
                 "min_change": 0,
                 "max_change": 0,
+                "boundary_pop": (
+                    the_pattern.initial_stator_on
+                    & the_pattern.stator
+                    & any_boundary
+                ).population,
                 "symmetry": sum(SYMMETRY_WEIGHTS[symm]
                                 for symm in init_symmetries),
                 "symmetry_name": (
@@ -97,6 +103,7 @@ class ObjectiveStats:
                 "max_pop": - float("inf"),
                 "min_change": float("inf"),
                 "max_change": - float("inf"),
+                "boundary_pop": float("inf"),
                 "symmetry": - float("inf"),
                 "symmetry_name": '"C1"',
                 "left": - float("inf"),    "left_with_rotor": - float("inf"),
@@ -115,7 +122,8 @@ class ObjectiveStats:
             }
 
     def store_final_stats(
-        self, solver, stator_vars, box_vars, symm_vars, change_var
+        self, solver, stator_vars, box_vars,
+        symm_vars, change_var, boundary_pop_var
     ):
         self._status = "Final"
         final_symmetries = [
@@ -129,6 +137,7 @@ class ObjectiveStats:
             "max_pop": final_stator_pop,
             "min_change": solver.Value(change_var),
             "max_change": solver.Value(change_var),
+            "boundary_pop": solver.Value(boundary_pop_var),
             "symmetry": sum(SYMMETRY_WEIGHTS[symm]
                             for symm in final_symmetries),
             "symmetry_name": (

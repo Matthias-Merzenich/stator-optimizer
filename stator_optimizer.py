@@ -164,7 +164,7 @@ def main():
     stator_array = the_pattern.stator.coords()
 
     # Compute and print the initial stats that we want to optimize.
-    objective_stats = ObjectiveStats(the_pattern)
+    objective_stats = ObjectiveStats(the_pattern, any_boundary)
     verbose_print(objective_stats.get_stats_string(args.optimize))
 
     # Compute the sets needed to apply the CA rules
@@ -209,6 +209,15 @@ def main():
     change_var = model.NewIntVar(0, max_pop, 'stator_change')
     model.Add(change_var == cp_model.LinearExpr.Sum(change_set))
 
+    # Apply constraints counting the number of cells in the unforced boundary
+    max_boundary_pop = len(unforced_boundary_cells)
+    boundary_pop_var = model.NewIntVar(
+        0, max_boundary_pop, 'boundary_pop'
+    )
+    model.Add(boundary_pop_var == cp_model.LinearExpr.Sum(
+        [stator_vars[x, y] for x, y in unforced_boundary_cells & stator_cells]
+    ))
+
     # Finish building `objective_dict`, which is used to construct the
     # the objective expression to minimize.
     max_symm = sum(SYMMETRY_WEIGHTS.values())
@@ -220,11 +229,12 @@ def main():
         [SYMMETRY_WEIGHTS[symm] for symm in SYMMETRY_WEIGHTS]
     ))
     objective_dict.update({
-        "min_pop":    [pop_var,    "min", max_pop],
-        "max_pop":    [pop_var,    "max", max_pop],
-        "min_change": [change_var, "min", max_pop],
-        "max_change": [change_var, "max", max_pop],
-        "symmetry":   [symm_var,   "max", max_symm]
+        "min_pop":      [pop_var,          "min", max_pop],
+        "max_pop":      [pop_var,          "max", max_pop],
+        "min_change":   [change_var,       "min", max_pop],
+        "max_change":   [change_var,       "max", max_pop],
+        "boundary_pop": [boundary_pop_var, "min", max_boundary_pop],
+        "symmetry":     [symm_var,         "max", max_symm]
     })
 
     # Apply the objective expression to the model
@@ -237,6 +247,7 @@ def main():
                   f" {len(stator_cells - forced_on_cells - forced_off_cells)}")
     verbose_print(f"  Variables: {len(model.Proto().variables)}")
     verbose_print(f"  Constraints: {len(model.Proto().constraints)}")
+    verbose_print()
 
     verbose_print("Beginning optimization search...\n")
 
@@ -268,7 +279,8 @@ def main():
                     output_pattern[x,y] = 1
 
             objective_stats.store_final_stats(
-                solver, stator_vars, box_vars, symm_bool, change_var
+                solver, stator_vars, box_vars, symm_bool,
+                change_var, boundary_pop_var
             )
             verbose_print(objective_stats.get_stats_string(args.optimize))
             print(clean_rle(output_pattern.rle_string()))
