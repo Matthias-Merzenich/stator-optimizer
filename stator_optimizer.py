@@ -149,6 +149,9 @@ def main():
         any_boundary += the_pattern.stator_boundary["box"]
     any_boundary -= off_boundary
     forced_off += off_boundary
+    extra_boundary = (
+        any_boundary[1] - the_pattern.stator - the_pattern.rotor
+    )
 
     # Convert patterns to sets of coordinate tuples.
     # tolist() converts NumPy integers to Python ints.
@@ -161,6 +164,7 @@ def main():
     stator_cells = pattern_to_set(the_pattern.stator)
     if not (stator_cells - forced_on_cells - forced_off_cells):
         raise RuntimeError("Search area is empty.")
+    extra_boundary_cells = pattern_to_set(extra_boundary)
     stator_array = the_pattern.stator.coords()
 
     # Compute and print the initial stats that we want to optimize.
@@ -175,7 +179,7 @@ def main():
     model = cp_model.CpModel()
 
     # Apply the life rules for the stator cells and rotor transitions.
-    stator_vars = build_model(
+    stator_vars, valid_boundary_vars = build_model(
         rulestring,
         model,
         stator_cells,
@@ -183,7 +187,9 @@ def main():
         forced_on_cells,
         forced_off_cells,
         stator_neighbor_counts,
-        rotor_transitions
+        rotor_transitions,
+        extra_boundary_cells,
+        "valid_boundary" in args.optimize,
     )
 
     # Apply constraints relating to the bounding box and bounding diamond.
@@ -221,20 +227,29 @@ def main():
     # Finish building `objective_dict`, which is used to construct the
     # the objective expression to minimize.
     max_symm = sum(SYMMETRY_WEIGHTS.values())
+    max_invalid_boundary = len(valid_boundary_vars)
     pop_var = model.NewIntVar(0, max_pop, 'stator_pop')
+    invalid_boundary_sum = model.NewIntVar(
+        0, max_invalid_boundary, 'invalid_boundary_sum'
+    )
     symm_var = model.NewIntVar(0, max_symm, 'symmetry_sum')
     model.Add(pop_var == cp_model.LinearExpr.Sum(list(stator_vars.values())))
+    model.Add(invalid_boundary_sum == (
+        max_invalid_boundary
+        - cp_model.LinearExpr.Sum(list(valid_boundary_vars.values()))
+    ))
     model.Add(symm_var == cp_model.LinearExpr.WeightedSum(
         [symm_bool[symm] for symm in SYMMETRY_WEIGHTS],
         [SYMMETRY_WEIGHTS[symm] for symm in SYMMETRY_WEIGHTS]
     ))
     objective_dict.update({
-        "min_pop":      [pop_var,          "min", max_pop],
-        "max_pop":      [pop_var,          "max", max_pop],
-        "min_change":   [change_var,       "min", max_pop],
-        "max_change":   [change_var,       "max", max_pop],
-        "boundary_pop": [boundary_pop_var, "min", max_boundary_pop],
-        "symmetry":     [symm_var,         "max", max_symm]
+        "min_pop":        [pop_var,              "min", max_pop],
+        "max_pop":        [pop_var,              "max", max_pop],
+        "min_change":     [change_var,           "min", max_pop],
+        "max_change":     [change_var,           "max", max_pop],
+        "boundary_pop":   [boundary_pop_var,     "min", max_boundary_pop],
+        "valid_boundary": [invalid_boundary_sum, "min", max_invalid_boundary],
+        "symmetry":       [symm_var,             "max", max_symm]
     })
 
     # Apply the objective expression to the model
@@ -280,7 +295,7 @@ def main():
 
             objective_stats.store_final_stats(
                 solver, stator_vars, box_vars, symm_bool,
-                change_var, boundary_pop_var
+                change_var, boundary_pop_var, invalid_boundary_sum
             )
             verbose_print(objective_stats.get_stats_string(args.optimize))
             print(clean_rle(output_pattern.rle_string()))

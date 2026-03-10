@@ -11,11 +11,14 @@ def build_model(rulestring,
                 forced_on_cells,
                 forced_off_cells,
                 stator_neighbor_counts,
-                rotor_transitions
+                rotor_transitions,
+                extra_boundary_cells,
+                validate_boundary
 ):
     birth_at, survival_at = get_rule(rulestring)
 
     stator_vars = {}
+    valid_boundary_vars = {}
     for x,y in stator_cells:
         stator_vars[x,y] = model.NewBoolVar(f"stator_{x}_{y}")
 
@@ -35,26 +38,30 @@ def build_model(rulestring,
 
     # Apply the CA rules to the stator cells
     for x,y,rotor_sum in stator_neighbor_counts:
+        cell_on = [stator_vars[x,y]]
+        cell_off = [stator_vars[x,y].Not()]
         if (x,y) in unforced_boundary_cells:
-            continue
+            if validate_boundary:
+                # If valid_boundary_vars[x,y] is true,
+                # then the CA rules apply at (x,y).
+                valid_boundary_vars[x,y] = (
+                    model.NewBoolVar(f"valid_boundary_{x}_{y}")
+                )
+                cell_on.append(valid_boundary_vars[x,y])
+                cell_off.append(valid_boundary_vars[x,y])
+            else:
+                continue
+
         neighbor_sum = get_stator_sum(x,y) + rotor_sum
         if rulestring == "b3s23":
-            model.Add(neighbor_sum != 3).OnlyEnforceIf(
-                stator_vars[x,y].Not()
-            )
-            model.AddLinearConstraint(neighbor_sum, 2, 3).OnlyEnforceIf(
-                stator_vars[x,y]
-            )
+            model.Add(neighbor_sum != 3).OnlyEnforceIf(cell_off)
+            model.AddLinearConstraint(neighbor_sum, 2, 3).OnlyEnforceIf(cell_on)
         else:
             for count in range(9):
                 if birth_at[count]:
-                    model.Add(neighbor_sum != count).OnlyEnforceIf(
-                        stator_vars[x,y].Not()
-                    )
+                    model.Add(neighbor_sum != count).OnlyEnforceIf(cell_off)
                 if not survival_at[count]:
-                    model.Add(neighbor_sum != count).OnlyEnforceIf(
-                        stator_vars[x,y]
-                    )
+                    model.Add(neighbor_sum != count).OnlyEnforceIf(cell_on)
 
     # Apply the CA rules to the rotor transitions
     for x,y,rotor_sum,state_0,state_1 in rotor_transitions:
@@ -80,7 +87,21 @@ def build_model(rulestring,
                 if state_0 == 1 and state_1 == 1 and not survival_at[count]:
                     model.Add(neighbor_sum != count)
 
-    return stator_vars
+    # If we are validating the boundary, make sure to identify when the
+    # unchecked boundary would cause births outside of the search area.
+    if validate_boundary:
+        for x,y in extra_boundary_cells:
+            valid_boundary_vars[x,y] = (
+                model.NewBoolVar(f"valid_boundary_{x}_{y}")
+            )
+            neighbor_sum = get_stator_sum(x,y)
+            for count in range(9):
+                if birth_at[count]:
+                    model.Add(
+                        neighbor_sum != count
+                    ).OnlyEnforceIf(valid_boundary_vars[x,y])
+
+    return stator_vars, valid_boundary_vars
 
 
 # For the given transformation, add conditions so that the

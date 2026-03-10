@@ -26,6 +26,7 @@ OBJECTIVE_ALIAS = {
     "min_change": "Changed",
     "max_change": "Changed",
     "boundary_pop": "Boundary population",
+    "valid_boundary": "Invalid boundary cells",
     "symmetry": "Symmetry",
     "left": "x_min",
     "right": "x_max",
@@ -84,16 +85,17 @@ class ObjectiveStats:
                 "max_pop": the_pattern.initial_stator_on.population,
                 "min_change": 0,
                 "max_change": 0,
+                "symmetry": sum(SYMMETRY_WEIGHTS[symm]
+                                for symm in init_symmetries),
+                "symmetry_name": (
+                    f'"{max(init_symmetries, key=SYMMETRY_WEIGHTS.get)}"'
+                ),
                 "boundary_pop": (
                     the_pattern.initial_stator_on
                     & the_pattern.stator
                     & any_boundary
                 ).population,
-                "symmetry": sum(SYMMETRY_WEIGHTS[symm]
-                                for symm in init_symmetries),
-                "symmetry_name": (
-                    f'"{max(init_symmetries, key=SYMMETRY_WEIGHTS.get)}"'
-                )
+                "valid_boundary": 0
             }
             for with_rotor in [True, False]:
                 self.stats.update(get_box_stats(the_pattern, with_rotor))
@@ -103,9 +105,10 @@ class ObjectiveStats:
                 "max_pop": - float("inf"),
                 "min_change": float("inf"),
                 "max_change": - float("inf"),
-                "boundary_pop": float("inf"),
                 "symmetry": - float("inf"),
                 "symmetry_name": '"C1"',
+                "boundary_pop": float("inf"),
+                "valid_boundary": float("inf"),
                 "left": - float("inf"),    "left_with_rotor": - float("inf"),
                 "right": float("inf"),     "right_with_rotor": float("inf"),
                 "top": - float("inf"),     "top_with_rotor": - float("inf"),
@@ -122,8 +125,8 @@ class ObjectiveStats:
             }
 
     def store_final_stats(
-        self, solver, stator_vars, box_vars,
-        symm_vars, change_var, boundary_pop_var
+        self, solver, stator_vars, box_vars, symm_vars,
+        change_var, boundary_pop_var, invalid_boundary_sum
     ):
         self._status = "Final"
         final_symmetries = [
@@ -137,12 +140,13 @@ class ObjectiveStats:
             "max_pop": final_stator_pop,
             "min_change": solver.Value(change_var),
             "max_change": solver.Value(change_var),
-            "boundary_pop": solver.Value(boundary_pop_var),
             "symmetry": sum(SYMMETRY_WEIGHTS[symm]
                             for symm in final_symmetries),
             "symmetry_name": (
                 f'"{max(final_symmetries, key=SYMMETRY_WEIGHTS.get)}"'
-            )
+            ),
+            "boundary_pop": solver.Value(boundary_pop_var),
+            "valid_boundary": solver.Value(invalid_boundary_sum)
         }
         for key in box_vars:
             self.stats[key] = solver.Value(box_vars[key])

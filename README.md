@@ -85,7 +85,8 @@ options:
                         Available properties:
                           min_pop, max_pop, area, width, height, symmetry,
                           left, right, top, bottom, nw, ne, sw, se, diag,
-                          back_diag, min_change, max_change, boundary_pop.
+                          back_diag, min_change, max_change, boundary_pop,
+                          valid_boundary.
                         The calculations of these properties only use the
                         stator. Append '_with_rotor' to also use the clipped
                         rotor from the box specified by the -c option.

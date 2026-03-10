@@ -220,13 +220,14 @@ def parse_arguments():
                  "top_with_rotor", "bottom_with_rotor", "nw_with_rotor",
                  "ne_with_rotor", "sw_with_rotor", "se_with_rotor",
                  "diag_with_rotor", "back_diag_with_rotor", "min_change",
-                 "max_change", "boundary_pop"],
+                 "max_change", "boundary_pop", "valid_boundary"],
         metavar="[OBJECTIVES ...]",
         help="A list of properties to optimize ordered by priority.\n"
              "Available properties:\n"
              "  min_pop, max_pop, area, width, height, symmetry,\n"
              "  left, right, top, bottom, nw, ne, sw, se, diag,\n"
-             "  back_diag, min_change, max_change, boundary_pop.\n"
+             "  back_diag, min_change, max_change, boundary_pop,\n"
+             "  valid_boundary.\n"
              "The calculations of these properties only use the "
              "stator. Append '_with_rotor' to also use the clipped "
              "rotor from the box specified by the -c option."
