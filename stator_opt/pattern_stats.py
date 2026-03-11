@@ -49,7 +49,10 @@ class PatternStats:
             mask += forced
             source = "rotor"
         distance = distance_dict[source]["distance"]
-        if distance is None or (source == "rotor" and mask.empty()):
+        if (distance is None
+            or (source == "rotor" and mask.empty())
+            or (source == "stator" and not self.is_history)
+        ):
             return self.base_stator
         stator_within_dist = self.base_stator & mask[distance]
         self.stator_boundary[source] = (

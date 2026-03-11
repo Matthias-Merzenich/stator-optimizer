@@ -28,7 +28,7 @@ Thanks to Jeremy Dover for the original idea and implementation that inspired th
 usage: stator_optimizer.py [-h] [-a LEFT RIGHT TOP BOTTOM [{off,any}]]
                            [-d {rotor,stator} DISTANCE [{off,any}]]
                            [-s SYMMETRY] [-o [OBJECTIVES ...]]
-                           [-c LEFT RIGHT TOP BOTTOM] [--solution_only]
+                           [-c LEFT RIGHT TOP BOTTOM] [-m] [--solution_only]
                            input_file ticks
 
 A program to optimize the stator of patterns in Life-like cellular automata.
@@ -95,6 +95,10 @@ options:
                         box is the bounding box of the input pattern. This
                         option is only used when '_with_rotor' objectives are
                         specified by the -o option.
+  -m, --minimize        Use settings that work well for minimizing the
+                        population of small to medium-sized patterns.
+                        Equivalent to:
+                          -a 99 99 99 99 any -d rotor 12 any -d stator 6 any
   --solution_only       Only print the solution. If no solution exists or if
                         the input pattern is already optimal, print nothing.
 ```

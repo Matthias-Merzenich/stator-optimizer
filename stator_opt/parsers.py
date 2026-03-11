@@ -8,7 +8,7 @@ import textwrap
 class CustomFormatter(argparse.HelpFormatter):
     # Wrap help text lines while still respecting manual newlines.
     def _split_lines(self, text, width):
-        MAX_WIDTH = 90
+        MAX_WIDTH = 80
         effective_width = min(width, MAX_WIDTH)
         lines = []
         for paragraph in text.splitlines():
@@ -47,28 +47,28 @@ class CustomFormatter(argparse.HelpFormatter):
 
 # Adjustments should have the form (int, int, int, int, [{"off","any"}])
 class AddAdjustments(argparse.Action):
-    def __call__(self, parser, namespace, items, option_string=None):
-        if not (4 <= len(items) <= 5):
+    def __call__(self, parser, namespace, values, option_string=None):
+        if not (4 <= len(values) <= 5):
             raise argparse.ArgumentTypeError(
                 f"option {option_string}: "
                 "Argument must have 4 or 5 elements."
             )
         try:
-            adjustments = [int(items[i]) for i in range(4)]
+            adjustments = [int(values[i]) for i in range(4)]
         except ValueError:
             raise argparse.ArgumentTypeError(
                 f"option {option_string}: "
                 f"First four elements must be integers. "
-                f"Got: '{items[:4]}'."
+                f"Got: '{values[:4]}'."
             )
         boundary = "off"
-        if len(items) == 5:
-            boundary = items[4].lower()
+        if len(values) == 5:
+            boundary = values[4].lower()
             if boundary not in ["off", "any"]:
                 raise argparse.ArgumentTypeError(
                     f"option {option_string}: "
                     f"Fifth element must be 'off' or 'any'. "
-                    f"Got: '{items[4]}'."
+                    f"Got: '{values[4]}'."
                 )
 
         # Update values
@@ -80,35 +80,35 @@ class AddAdjustments(argparse.Action):
 
 # Distances should have the form ({"rotor","stator"}, int>=0, [{"off","any"}])
 class AddDistance(argparse.Action):
-    def __call__(self, parser, namespace, items, option_string=None):
-        if not (2 <= len(items) <= 3):
+    def __call__(self, parser, namespace, values, option_string=None):
+        if not (2 <= len(values) <= 3):
             raise argparse.ArgumentTypeError(
                 f"option {option_string}: "
                 "Argument must have 2 or 3 elements."
             )
-        source = items[0].lower()
+        source = values[0].lower()
         if source not in ["rotor", "stator"]:
             raise argparse.ArgumentTypeError(
                 f"option {option_string}: "
                 f"First element must be 'rotor' or 'stator'. "
-                f"Got '{items[0]}'."
+                f"Got '{values[0]}'."
             )
         try:
-            distance = non_negative_int(items[1])
+            distance = non_negative_int(values[1])
         except argparse.ArgumentTypeError:
             raise argparse.ArgumentTypeError(
                 f"option {option_string}: "
                 f"Second element must be a nonnegative integer. "
-                f"Got: '{items[1]}'."
+                f"Got: '{values[1]}'."
             )
         boundary = "off"
-        if len(items) == 3:
-            boundary = items[2].lower()
+        if len(values) == 3:
+            boundary = values[2].lower()
             if boundary not in ["off", "any"]:
                 raise argparse.ArgumentTypeError(
                     f"option {option_string}: "
                     f"Third element must be 'off' or 'any'. "
-                    f"Got: '{items[2]}'."
+                    f"Got: '{values[2]}'."
                 )
 
         # Update values
@@ -116,6 +116,22 @@ class AddDistance(argparse.Action):
         current_options[source]["distance"] = distance
         current_options[source]["boundary"] = boundary
         setattr(namespace, self.dest, current_options)
+
+
+# Apply settings that are likely to find the min_pop stator in a
+# reasonable amount of time (could rarely give "invalid" results).
+class SetMinimizeOptions(argparse.Action):
+    def __init__(self, option_strings, dest, **kwargs):
+        super().__init__(option_strings, dest, nargs=0, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, "adjust",
+                {"adjustments": [99, 99, 99, 99], "boundary": "any"}
+        )
+        setattr(namespace, "distance", {
+            "rotor": {"distance": 12, "boundary": "any"},
+            "stator": {"distance": 6, "boundary": "any"}
+        })
 
 
 def non_negative_int(value):
@@ -241,6 +257,14 @@ def parse_arguments():
             "box is the bounding box of the input pattern. This "
             "option is only used when '_with_rotor' objectives are "
             "specified by the -o option."
+    )
+    parser.add_argument(
+        "-m", "--minimize",
+        action=SetMinimizeOptions,
+        help="Use settings that work well for minimizing the "
+             "population of small to medium-sized patterns.\n"
+             "Equivalent to:\n"
+             "  -a 99 99 99 99 any -d rotor 12 any -d stator 6 any"
     )
     parser.add_argument(
         "--solution_only",
